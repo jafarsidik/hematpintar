@@ -14,6 +14,9 @@ const MODULE_HEADERS: Record<ModuleType, readonly string[]> = {
     'Tenaga Kerja',
     'Overhead',
     'Jumlah Bahan',
+    'Daftar Bahan',
+    'Biaya Tetap',
+    'Perubahan Bahan',
   ],
   reseller: [
     'Produk',
@@ -88,6 +91,14 @@ function recordToCells(record: SimulationRecord): string[] | null {
         String(data.payload.directLaborCost),
         String(data.payload.allocatedOverhead),
         String(data.payload.ingredients.length),
+        data.payload.ingredients
+          .map(
+            (item) =>
+              `${item.nama} ${item.kuantitas} ${item.satuan ?? ''} @ ${item.hargaPerSatuan}`.trim(),
+          )
+          .join('; '),
+        String(data.payload.biayaTetap ?? 0),
+        String(data.payload.perubahanHargaBahan ?? 0),
       ]
     case 'reseller':
       return [

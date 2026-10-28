@@ -75,14 +75,20 @@ const ingredientSchema = z.object({
     .trim()
     .min(1, 'Nama bahan minimal 1 karakter.'),
   kuantitas: qtySchema,
+  satuan: satuanSchema.optional(),
   hargaPerSatuan: moneySchema,
 })
+
+const perubahanHargaBahanSchema = z
+  .number({ error: 'Perubahan harga bahan wajib berupa angka.' })
+  .min(-1, 'Penurunan harga bahan tidak boleh lebih dari 100%.')
 
 export const marginPayloadSchema = z.object({
   productName: z
     .string({ error: 'Nama produk wajib diisi.' })
     .trim()
-    .min(1, 'Nama produk minimal 1 karakter.'),
+    .min(1, 'Nama produk minimal 1 karakter.')
+    .max(120, 'Nama produk maksimal 120 karakter.'),
   batchYield: qtySchema,
   ingredients: z.array(ingredientSchema),
   packagingCost: moneySchema,
@@ -90,6 +96,8 @@ export const marginPayloadSchema = z.object({
   allocatedOverhead: moneySchema,
   sellingPrice: moneySchema,
   targetMargin: targetMarginSchema,
+  biayaTetap: moneySchema.optional(),
+  perubahanHargaBahan: perubahanHargaBahanSchema.optional(),
 })
 export type MarginPayload = z.infer<typeof marginPayloadSchema>
 

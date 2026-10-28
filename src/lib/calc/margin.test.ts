@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   biayaBahanBatch,
   breakEvenUnit,
+  evaluasiMargin,
   hargaJualDariMargin,
   hppPerUnit,
   labaKontribusi,
   marginAktual,
   markup,
+  simulasiBahanLengkap,
   simulasiPerubahanBahan,
+  totalBiayaBatch,
+  totalBiayaLain,
 } from './margin'
 import { expectErr, expectOk } from './test-helpers'
 
@@ -229,5 +233,129 @@ describe('simulasiPerubahanBahan', () => {
       simulasiPerubahanBahan(10_000, Number.NaN, 5_000),
       'BUKAN_ANGKA',
     )
+  })
+})
+
+describe('totalBiayaLain', () => {
+  it('menjumlahkan kemasan, tenaga kerja, dan overhead', () => {
+    expect(expectOk(totalBiayaLain(3_000, 2_000, 1_000))).toBe(6_000)
+  })
+
+  it('mengembalikan nol untuk komponen kosong', () => {
+    expect(expectOk(totalBiayaLain(0, 0, 0))).toBe(0)
+  })
+
+  it('menolak komponen negatif', () => {
+    expectErr(totalBiayaLain(-1, 0, 0), 'NOMINAL_NEGATIF')
+  })
+
+  it('menolak NaN', () => {
+    expectErr(totalBiayaLain(Number.NaN, 0, 0), 'BUKAN_ANGKA')
+  })
+})
+
+describe('totalBiayaBatch', () => {
+  it('menjumlahkan bahan dan seluruh biaya lain', () => {
+    const result = totalBiayaBatch(
+      [
+        { jumlah: 1, biayaPerSatuan: 24_000 },
+        { jumlah: 0.5, biayaPerSatuan: 12_000 },
+        { jumlah: 0.25, biayaPerSatuan: 16_000 },
+      ],
+      3_000,
+      2_000,
+      1_000,
+    )
+
+    expect(expectOk(result)).toBe(40_000)
+  })
+
+  it('menolak bahan tidak valid tanpa menghasilkan total', () => {
+    expectErr(
+      totalBiayaBatch([{ jumlah: 0, biayaPerSatuan: 1_000 }], 0, 0, 0),
+      'KUANTITAS_TIDAK_POSITIF',
+    )
+  })
+})
+
+describe('simulasiBahanLengkap', () => {
+  it('menghitung total, HPP, dan harga minimum setelah bahan berubah', () => {
+    const result = expectOk(
+      simulasiBahanLengkap({
+        biayaBahan: 34_000,
+        perubahanPersen: 0.1,
+        biayaLain: 6_000,
+        unitLayakJual: 10,
+        targetMargin: 0.2,
+      }),
+    )
+
+    expect(result.totalBiayaBatch).toBe(43_400)
+    expect(result.hppPerUnit).toBe(4_340)
+    expect(result.hargaJualMinimum).toBe(5_425)
+  })
+
+  it('tidak mengubah biaya lain saat bahan turun 50 persen', () => {
+    const result = expectOk(
+      simulasiBahanLengkap({
+        biayaBahan: 10_000,
+        perubahanPersen: -0.5,
+        biayaLain: 5_000,
+        unitLayakJual: 5,
+        targetMargin: 0.5,
+      }),
+    )
+
+    expect(result.totalBiayaBatch).toBe(10_000)
+    expect(result.hppPerUnit).toBe(2_000)
+    expect(result.hargaJualMinimum).toBe(4_000)
+  })
+
+  it('menolak target margin 100 persen', () => {
+    expectErr(
+      simulasiBahanLengkap({
+        biayaBahan: 10_000,
+        perubahanPersen: 0.1,
+        biayaLain: 5_000,
+        unitLayakJual: 5,
+        targetMargin: 1,
+      }),
+      'MARGIN_TARGET_TIDAK_VALID',
+    )
+  })
+})
+
+describe('evaluasiMargin', () => {
+  it('menyatakan sehat saat harga memenuhi harga minimum', () => {
+    const result = expectOk(evaluasiMargin(5_000, 4_000, 5_000))
+    expect(result).toEqual({
+      status: 'sehat',
+      selisihHargaMinimum: 0,
+    })
+  })
+
+  it('menyatakan di bawah target dan menghitung selisih harga minimum', () => {
+    const result = expectOk(evaluasiMargin(4_800, 4_000, 5_000))
+    expect(result).toEqual({
+      status: 'di_bawah_target',
+      selisihHargaMinimum: 200,
+    })
+  })
+
+  it('menyatakan rugi saat harga jual di bawah HPP', () => {
+    const result = expectOk(evaluasiMargin(3_800, 4_000, 5_000))
+    expect(result).toEqual({
+      status: 'rugi',
+      selisihHargaMinimum: 1_200,
+    })
+  })
+
+  it('menolak harga jual nol', () => {
+    expectErr(evaluasiMargin(0, 4_000, 5_000), 'NILAI_TIDAK_POSITIF')
+  })
+
+  it('menolak HPP atau harga minimum negatif', () => {
+    expectErr(evaluasiMargin(5_000, -1, 5_000), 'NOMINAL_NEGATIF')
+    expectErr(evaluasiMargin(5_000, 4_000, -1), 'NOMINAL_NEGATIF')
   })
 })

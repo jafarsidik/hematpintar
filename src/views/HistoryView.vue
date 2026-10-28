@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -16,6 +17,7 @@ type FilterValue = 'all' | ModuleType
 
 const simulationStore = useSimulationStore()
 const toastStore = useToastStore()
+const router = useRouter()
 
 const filter = ref<FilterValue>('all')
 const exportModule = ref<ModuleType>('household')
@@ -59,6 +61,17 @@ onMounted(() => {
 function startRename(simulation: SimulationRecord): void {
   renameTarget.value = simulation
   renameValue.value = simulation.name
+}
+
+function editSimulation(simulation: SimulationRecord): void {
+  if (simulation.moduleType === 'margin') {
+    void router.push({
+      path: '/margin-rescue',
+      query: { simulation: simulation.id },
+    })
+    return
+  }
+  startRename(simulation)
 }
 
 async function saveRename(): Promise<void> {
@@ -129,8 +142,9 @@ function exportCsv(): void {
           Semua simulasi
         </h1>
         <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Edit nama, duplikasi, atau hapus simulasi yang tersimpan di perangkat
-          ini. Ekspor CSV tersedia per modul.
+          Buka simulasi Margin Rescue untuk mengedit perhitungan, edit nama
+          simulasi lain, duplikasi, atau hapus data di perangkat ini. Ekspor CSV
+          tersedia per modul.
         </p>
       </div>
 
@@ -249,9 +263,9 @@ function exportCsv(): void {
             <button
               type="button"
               class="btn btn-secondary"
-              @click="startRename(simulation)"
+              @click="editSimulation(simulation)"
             >
-              Edit nama
+              {{ simulation.moduleType === 'margin' ? 'Edit' : 'Edit nama' }}
             </button>
             <button
               type="button"

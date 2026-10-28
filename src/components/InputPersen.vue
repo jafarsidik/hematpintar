@@ -74,7 +74,7 @@ function onFocus(): void {
 
 function parsePoints(value: string): number | null {
   const normalized = value.trim().replace(',', '.')
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null
+  if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null
   const points = Number(normalized)
   return Number.isFinite(points) ? points : null
 }

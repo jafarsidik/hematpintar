@@ -30,6 +30,55 @@ export function biayaBahanBatch(bahan: readonly Bahan[]): Result<number> {
   return fromErrors(errors, () => total)
 }
 
+/**
+ * Menjumlahkan biaya selain bahan: kemasan, tenaga kerja langsung, dan
+ * overhead produksi yang dialokasikan.
+ */
+export function totalBiayaLain(
+  biayaKemasan: number,
+  biayaTenagaKerja: number,
+  overheadTeralokasi: number,
+): Result<number> {
+  return fromErrors(
+    [
+      nonNegativeMoney('biayaKemasan', biayaKemasan),
+      nonNegativeMoney('biayaTenagaKerja', biayaTenagaKerja),
+      nonNegativeMoney('overheadTeralokasi', overheadTeralokasi),
+    ],
+    () => biayaKemasan + biayaTenagaKerja + overheadTeralokasi,
+  )
+}
+
+/**
+ * Total biaya batch = biaya bahan + kemasan + tenaga kerja langsung +
+ * overhead produksi teralokasi.
+ */
+export function totalBiayaBatch(
+  bahan: readonly Bahan[],
+  biayaKemasan: number,
+  biayaTenagaKerja: number,
+  overheadTeralokasi: number,
+): Result<number> {
+  const bahanResult = biayaBahanBatch(bahan)
+  const lainResult = totalBiayaLain(
+    biayaKemasan,
+    biayaTenagaKerja,
+    overheadTeralokasi,
+  )
+
+  const errors: ValidationError[] = [
+    ...(bahanResult.ok ? [] : bahanResult.errors),
+    ...(lainResult.ok ? [] : lainResult.errors),
+  ]
+
+  return fromErrors(errors, () => {
+    const bahanValue = bahanResult.ok ? bahanResult.value : 0
+    const lainValue = lainResult.ok ? lainResult.value : 0
+    return bahanValue + lainValue
+  })
+}
+
+
 export function hppPerUnit(
   totalBiayaBatch: number,
   unitLayakJual: number,
@@ -175,3 +224,81 @@ export function simulasiPerubahanBahan(
 
   return ok(biayaBahan * (1 + perubahanPersen) + biayaLain)
 }
+
+export interface HasilSimulasiBahan {
+  totalBiayaBatch: number
+  hppPerUnit: number
+  hargaJualMinimum: number
+}
+
+/**
+ * Simulasi lengkap perubahan harga bahan: total batch baru, HPP baru, dan
+ * harga jual minimum baru pada target margin yang sama.
+ */
+export function simulasiBahanLengkap(input: {
+  biayaBahan: number
+  perubahanPersen: number
+  biayaLain: number
+  unitLayakJual: number
+  targetMargin: number
+}): Result<HasilSimulasiBahan> {
+  const total = simulasiPerubahanBahan(
+    input.biayaBahan,
+    input.perubahanPersen,
+    input.biayaLain,
+  )
+  if (!total.ok) return fail(total.errors)
+
+  const hpp = hppPerUnit(total.value, input.unitLayakJual)
+  if (!hpp.ok) return fail(hpp.errors)
+
+  const hargaMinimum = hargaJualDariMargin(hpp.value, input.targetMargin)
+  if (!hargaMinimum.ok) return fail(hargaMinimum.errors)
+
+  return ok({
+    totalBiayaBatch: total.value,
+    hppPerUnit: hpp.value,
+    hargaJualMinimum: hargaMinimum.value,
+  })
+}
+
+export type StatusMargin = 'sehat' | 'di_bawah_target' | 'rugi'
+
+export interface PenilaianMargin {
+  status: StatusMargin
+  selisihHargaMinimum: number
+}
+
+/**
+ * Menilai harga jual terhadap HPP dan harga minimum target margin.
+ * - rugi: harga jual di bawah HPP
+ * - di_bawah_target: harga jual di bawah harga minimum
+ * - sehat: harga jual memenuhi target margin
+ */
+export function evaluasiMargin(
+  hargaJual: number,
+  hpp: number,
+  hargaMinimum: number,
+): Result<PenilaianMargin> {
+  return fromErrors(
+    [
+      positiveValueError('hargaJual', hargaJual),
+      nonNegativeMoney('hpp', hpp),
+      nonNegativeMoney('hargaMinimum', hargaMinimum),
+    ],
+    () => {
+      const status: StatusMargin =
+        hargaJual < hpp
+          ? 'rugi'
+          : hargaJual < hargaMinimum
+            ? 'di_bawah_target'
+            : 'sehat'
+
+      return {
+        status,
+        selisihHargaMinimum: Math.max(0, hargaMinimum - hargaJual),
+      }
+    },
+  )
+}
+
