@@ -1,3 +1,10 @@
+<script setup lang="ts">
+import ModulePlaceholder from '@/components/ModulePlaceholder.vue'
+import { moduleInfo } from '@/lib/modules'
+
+const moduleData = moduleInfo('reseller')
+</script>
+
 <template>
-  <h1 class="text-2xl font-semibold tracking-tight">Profit Kit Reseller</h1>
+  <ModulePlaceholder :module="moduleData" />
 </template>

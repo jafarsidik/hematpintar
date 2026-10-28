@@ -1,7 +1,8 @@
 # HematPintar
 
-Scaffold proyek HematPintar: Vue 3 + Vite + TypeScript, PWA, fondasi
-penyimpanan lokal, dan mesin kalkulasi murni. **Belum ada UI fitur.**
+Fondasi aplikasi HematPintar: Vue 3 + Vite + TypeScript, PWA, navigasi
+responsif, komponen UI bersama, penyimpanan lokal Dexie, backup/CSV, dan mesin
+kalkulasi murni. **Form perhitungan tiap modul belum dibangun.**
 
 Sumber kebenaran produk dan rumus ada di [`docs/PRD.md`](docs/PRD.md).
 
@@ -41,18 +42,31 @@ Jangan pernah menaruh service role key di frontend.
 
 ```text
 src/
-├── components/        # komponen UI bersama (masih kosong)
+├── components/        # input, kartu hasil, status, dialog, toast, empty state
 ├── lib/
 │   ├── calc/          # SATU-SATUNYA tempat logika keuangan (fungsi murni)
-│   ├── storage/       # abstraksi Dexie/IndexedDB (masih kosong)
+│   ├── storage/       # Dexie/IndexedDB, schema Zod, repository, CSV, backup
 │   └── supabase/      # client Supabase yang aman saat env kosong
 ├── router/
-├── stores/            # Pinia (masih kosong)
-├── views/             # placeholder judul tiap halaman
+├── stores/            # Pinia: simulasi dan toast
+├── views/             # dashboard, riwayat, pengaturan, panduan, halaman modul
 ├── App.vue
 └── main.ts
 supabase/migrations/   # migrasi SQL (masih kosong)
 ```
+
+## Penyimpanan lokal
+
+- Database Dexie `hematpintar` memiliki tabel `settings`, `simulations`, dan
+  `products`.
+- Setiap simulasi memakai UUID, `schemaVersion`, dan payload yang divalidasi
+  Zod sebelum ditulis.
+- Repository menyediakan create, getById, list per modul, update, duplicate,
+  dan remove. Kegagalan IndexedDB dikembalikan sebagai error, bukan sukses.
+- CSV diekspor per modul. Backup JSON berisi seluruh tabel dan divalidasi penuh
+  sebelum impor; berkas rusak tidak mengubah data lama.
+- Data hanya tersimpan di perangkat. Tidak ada sinkronisasi cloud pada tahap
+  ini.
 
 ## Mesin kalkulasi
 
