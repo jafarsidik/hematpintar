@@ -1,7 +1,7 @@
 # HematPintar
 
-Scaffold proyek HematPintar: Vue 3 + Vite + TypeScript, PWA, dan fondasi
-penyimpanan lokal. **Belum ada fitur atau logika keuangan** pada tahap ini.
+Scaffold proyek HematPintar: Vue 3 + Vite + TypeScript, PWA, fondasi
+penyimpanan lokal, dan mesin kalkulasi murni. **Belum ada UI fitur.**
 
 Sumber kebenaran produk dan rumus ada di [`docs/PRD.md`](docs/PRD.md).
 
@@ -43,10 +43,9 @@ Jangan pernah menaruh service role key di frontend.
 src/
 ├── components/        # komponen UI bersama (masih kosong)
 ├── lib/
-│   ├── calc/          # SATU-SATUNYA tempat logika keuangan nanti
+│   ├── calc/          # SATU-SATUNYA tempat logika keuangan (fungsi murni)
 │   ├── storage/       # abstraksi Dexie/IndexedDB (masih kosong)
-│   ├── supabase/      # client Supabase yang aman saat env kosong
-│   └── format.ts      # formatRupiah sementara (bukan kalkulasi)
+│   └── supabase/      # client Supabase yang aman saat env kosong
 ├── router/
 ├── stores/            # Pinia (masih kosong)
 ├── views/             # placeholder judul tiap halaman
@@ -54,6 +53,20 @@ src/
 └── main.ts
 supabase/migrations/   # migrasi SQL (masih kosong)
 ```
+
+## Mesin kalkulasi
+
+`src/lib/calc/` berisi fungsi murni tanpa Vue, Supabase, Dexie, atau efek
+samping. Setiap fungsi mengembalikan `Result<T>`:
+
+```ts
+{ ok: true, value: T } | { ok: false, errors: ValidationError[] }
+```
+
+Modul: `household`, `margin`, `reseller`, `bundle`, `unit-conversion`,
+`currency-format`, `validation`. Persentase direpresentasikan sebagai
+pecahan desimal (`0,3` = 30%). Kebijakan pembulatan dan batas error ada di
+[`src/lib/calc/ROUNDING.md`](src/lib/calc/ROUNDING.md).
 
 ## Catatan
 
