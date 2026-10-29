@@ -105,6 +105,223 @@ const newProduct = reactive<NewProductForm>({
 
 const editingProduct = ref<EditingProduct | null>(null)
 const budgetInput = ref<number | null>(null)
+const showExamplePicker = ref(false)
+
+interface ExampleProduct {
+  title: string
+  platform: string
+  store_name: string | null
+  url: string
+  price: number
+  pack_size: number
+  pack_unit: 'g' | 'kg' | 'ml' | 'l' | 'pcs'
+  shipping_cost: number
+  voucher_discount: number
+  note: string | null
+}
+
+interface ExampleNeed {
+  name: string
+  target_qty: number
+  unit: 'g' | 'kg' | 'ml' | 'l' | 'pcs'
+  monthlyBudget: number
+  products: ExampleProduct[]
+}
+
+const EXAMPLE_CATEGORIES: readonly ExampleNeed[] = [
+  {
+    name: 'Sembako Bulanan',
+    target_qty: 1,
+    unit: 'pcs',
+    monthlyBudget: 200_000,
+    products: [
+      {
+        title: 'Beras Premium 5 kg',
+        platform: 'Shopee',
+        store_name: 'Toko A',
+        url: 'https://shopee.co.id/beras-premium',
+        price: 75_000,
+        pack_size: 5,
+        pack_unit: 'kg',
+        shipping_cost: 10_000,
+        voucher_discount: 3_000,
+        note: 'Beras premium untuk keluarga',
+      },
+      {
+        title: 'Minyak Goreng 2 liter',
+        platform: 'Tokopedia',
+        store_name: 'Toko B',
+        url: 'https://tokopedia.com/minyak-2l',
+        price: 30_000,
+        pack_size: 2,
+        pack_unit: 'l',
+        shipping_cost: 5_000,
+        voucher_discount: 0,
+        note: 'Minyak goreng kemasan besar',
+      },
+      {
+        title: 'Gula Pasir 1 kg',
+        platform: 'Lazada',
+        store_name: 'Toko C',
+        url: 'https://lazada.co.id/gula-1kg',
+        price: 15_000,
+        pack_size: 1,
+        pack_unit: 'kg',
+        shipping_cost: 3_000,
+        voucher_discount: 0,
+        note: 'Gula pasir standar',
+      },
+      {
+        title: 'Telur Ayam 1 kg',
+        platform: 'Shopee',
+        store_name: 'Toko A',
+        url: 'https://shopee.co.id/telur-1kg',
+        price: 24_000,
+        pack_size: 1,
+        pack_unit: 'kg',
+        shipping_cost: 2_000,
+        voucher_discount: 0,
+        note: 'Telur ayam kampung',
+      },
+      {
+        title: 'Sabun Mandi 3 pcs',
+        platform: 'Tokopedia',
+        store_name: 'Toko B',
+        url: 'https://tokopedia.com/sabun-3pcs',
+        price: 18_000,
+        pack_size: 3,
+        pack_unit: 'pcs',
+        shipping_cost: 4_000,
+        voucher_discount: 2_000,
+        note: 'Sabun mandi batang',
+      },
+    ],
+  },
+  {
+    name: 'Makanan Siap Saji',
+    target_qty: 1,
+    unit: 'pcs',
+    monthlyBudget: 150_000,
+    products: [
+      {
+        title: 'Indomie Goreng 1 pak (5 pcs)',
+        platform: 'Shopee',
+        store_name: 'Toko A',
+        url: 'https://shopee.co.id/indomie',
+        price: 30_000,
+        pack_size: 5,
+        pack_unit: 'pcs',
+        shipping_cost: 5_000,
+        voucher_discount: 0,
+        note: 'Mie instan rasa goreng',
+      },
+      {
+        title: 'Mie Sedaap 1 pak (5 pcs)',
+        platform: 'Tokopedia',
+        store_name: 'Toko B',
+        url: 'https://tokopedia.com/mie-sedaap',
+        price: 28_000,
+        pack_size: 5,
+        pack_unit: 'pcs',
+        shipping_cost: 5_000,
+        voucher_discount: 0,
+        note: 'Mie instan rasa kari ayam',
+      },
+      {
+        title: 'Teh Kotak 1 liter (12 pcs)',
+        platform: 'Lazada',
+        store_name: 'Toko C',
+        url: 'https://lazada.co.id/teh-kotak',
+        price: 48_000,
+        pack_size: 12,
+        pack_unit: 'pcs',
+        shipping_cost: 8_000,
+        voucher_discount: 3_000,
+        note: 'Teh kotak kotak 1 liter',
+      },
+      {
+        title: 'Kopi Kapal Api 10 sachet',
+        platform: 'Shopee',
+        store_name: 'Toko A',
+        url: 'https://shopee.co.id/kopi-kapal-api',
+        price: 15_000,
+        pack_size: 10,
+        pack_unit: 'pcs',
+        shipping_cost: 3_000,
+        voucher_discount: 0,
+        note: 'Kopi instan sachet',
+      },
+    ],
+  },
+  {
+    name: 'Stok Warung Kecil',
+    target_qty: 1,
+    unit: 'pcs',
+    monthlyBudget: 180_000,
+    products: [
+      {
+        title: 'Gula Pasir 1 kg',
+        platform: 'Tokopedia',
+        store_name: 'Toko B',
+        url: 'https://tokopedia.com/gula-1kg',
+        price: 15_000,
+        pack_size: 1,
+        pack_unit: 'kg',
+        shipping_cost: 3_000,
+        voucher_discount: 0,
+        note: 'Gula pasir untuk warung',
+      },
+      {
+        title: 'Minyak Goreng 2 liter',
+        platform: 'Lazada',
+        store_name: 'Toko C',
+        url: 'https://lazada.co.id/minyak-2l',
+        price: 30_000,
+        pack_size: 2,
+        pack_unit: 'l',
+        shipping_cost: 5_000,
+        voucher_discount: 0,
+        note: 'Minyak goreng kemasan besar',
+      },
+      {
+        title: 'Kopi Hitam 10 sachet',
+        platform: 'Shopee',
+        store_name: 'Toko A',
+        url: 'https://shopee.co.id/kopi-hitam',
+        price: 12_000,
+        pack_size: 10,
+        pack_unit: 'pcs',
+        shipping_cost: 3_000,
+        voucher_discount: 0,
+        note: 'Kopi hitam sachet',
+      },
+      {
+        title: 'Rokok Kretek 1 batang (10 pcs)',
+        platform: 'Tokopedia',
+        store_name: 'Toko B',
+        url: 'https://tokopedia.com/rokok',
+        price: 24_000,
+        pack_size: 10,
+        pack_unit: 'pcs',
+        shipping_cost: 2_000,
+        voucher_discount: 0,
+        note: 'Rokok kretek batang',
+      },
+      {
+        title: 'Sabun Cuci 1 pcs',
+        platform: 'Lazada',
+        store_name: 'Toko C',
+        url: 'https://lazada.co.id/sabun-cuci',
+        price: 8_000,
+        pack_size: 1,
+        pack_unit: 'pcs',
+        shipping_cost: 2_000,
+        voucher_discount: 0,
+        note: 'Sabun cuci piring',
+      },
+    ],
+  },
+]
 
 watch(
   () => budget.value,
@@ -472,65 +689,53 @@ function confirmDelete(): void {
   deleteOpen.value = null
 }
 
-async function isiContoh(): Promise<void> {
+function openExamplePicker(): void {
   if (needs.value.length > 0) {
     toastStore.info('Contoh hanya diisi bila belum ada kebutuhan.')
     return
   }
+  showExamplePicker.value = true
+}
+
+function closeExamplePicker(): void {
+  showExamplePicker.value = false
+}
+
+async function isiContohKategori(index: number): Promise<void> {
+  const kategori = EXAMPLE_CATEGORIES[index]
+  if (!kategori) return
 
   const result = await store.createNeedItem({
-    name: 'Beras',
-    target_qty: 5,
-    unit: 'kg',
+    name: kategori.name,
+    target_qty: kategori.target_qty,
+    unit: kategori.unit,
   })
   if (!result) return
 
   const needId = result.id
   const now = new Date().toISOString()
 
-  await store.createNeedProduct(needId, {
-    title: 'Beras A',
-    platform: 'Shopee',
-    store_name: 'Toko A',
-    url: 'https://shopee.co.id/beras-a',
-    price: 68_000,
-    pack_size: 5,
-    pack_unit: 'kg',
-    shipping_cost: 10_000,
-    voucher_discount: 3_000,
-    note: 'Beras premium 5 kg',
-    price_checked_at: now,
-  })
-  await store.createNeedProduct(needId, {
-    title: 'Beras B',
-    platform: 'Tokopedia',
-    store_name: 'Toko B',
-    url: 'https://tokopedia.com/beras-b',
-    price: 62_000,
-    pack_size: 5,
-    pack_unit: 'kg',
-    shipping_cost: 18_000,
-    voucher_discount: 0,
-    note: 'Beras medium 5 kg',
-    price_checked_at: now,
-  })
-  await store.createNeedProduct(needId, {
-    title: 'Beras C',
-    platform: 'Lazada',
-    store_name: 'Toko C',
-    url: 'https://lazada.co.id/beras-c',
-    price: 25_000,
-    pack_size: 2,
-    pack_unit: 'kg',
-    shipping_cost: 8_000,
-    voucher_discount: 0,
-    note: 'Beras hemat 2 kg',
-    price_checked_at: now,
-  })
+  for (const produk of kategori.products) {
+    await store.createNeedProduct(needId, {
+      title: produk.title,
+      platform: produk.platform,
+      store_name: produk.store_name,
+      url: produk.url,
+      price: produk.price,
+      pack_size: produk.pack_size,
+      pack_unit: produk.pack_unit,
+      shipping_cost: produk.shipping_cost,
+      voucher_discount: produk.voucher_discount,
+      note: produk.note,
+      price_checked_at: now,
+    })
+  }
 
+  await store.setMonthlyBudget(kategori.monthlyBudget)
   await store.fetchProducts(needId)
   activeNeedId.value = needId
-  toastStore.success('Contoh kebutuhan Beras A/B/C telah diisi.')
+  closeExamplePicker()
+  toastStore.success(`Contoh "${kategori.name}" telah diisi.`)
 }
 
 function exportCsv(): void {
@@ -582,9 +787,44 @@ function exportCsv(): void {
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <button type="button" class="btn btn-secondary" @click="isiContoh">
-          Isi contoh
-        </button>
+        <div class="relative inline-block">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="openExamplePicker"
+          >
+            Isi Contoh
+          </button>
+          <div
+            v-if="showExamplePicker"
+            class="absolute left-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-2 z-10"
+          >
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 px-2">
+              Pilih kategori
+            </h4>
+            <div class="space-y-1">
+              <button
+                v-for="(kategori, index) in EXAMPLE_CATEGORIES"
+                :key="index"
+                type="button"
+                class="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg transition"
+                @click="isiContohKategori(index)"
+              >
+                <span class="font-medium">{{ kategori.name }}</span>
+                <span class="ml-auto text-xs text-slate-500">
+                  {{ formatRupiah(kategori.monthlyBudget) }}
+                </span>
+              </button>
+            </div>
+            <button
+              type="button"
+              class="w-full text-left px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-lg transition mt-1"
+              @click="closeExamplePicker"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
         <button type="button" class="btn btn-primary" @click="showAddNeed = true">
           Tambah kebutuhan
         </button>
