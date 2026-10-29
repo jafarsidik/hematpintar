@@ -43,3 +43,38 @@ export function buildWhatsAppUrl(
 
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
 }
+
+export interface BelanjaItemRingkasan {
+  needName: string
+  productTitle: string
+  platform: string
+  hargaEfektif: number
+}
+
+/**
+ * Membuat pesan WhatsApp untuk daftar belanja yang dipilih.
+ * Tidak ada scraping dan tidak ada nomor telepon yang disimpan server.
+ */
+export function buildWhatsAppBelanjaMessage(
+  items: readonly BelanjaItemRingkasan[],
+  total: number,
+): string {
+  const lines = [
+    'Halo HematPintar,',
+    'Saya ingin membeli belanja berikut:',
+    '',
+  ]
+
+  for (const item of items) {
+    lines.push(
+      '*'
+        .concat(item.productTitle, '* (')
+        .concat(item.platform, ') - ')
+        .concat(formatRupiah(item.hargaEfektif)),
+    )
+  }
+
+  lines.push('', `Total: ${formatRupiah(total)}`, 'Mohon dibantu.')
+
+  return lines.join('\n')
+}

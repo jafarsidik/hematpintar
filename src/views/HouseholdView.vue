@@ -21,6 +21,10 @@ import { dimensiSatuan } from '@/lib/calc/unit-conversion'
 import { normalizeLinkSource } from '@/lib/links/normalize-url'
 import { fileDateStamp } from '@/lib/format-date'
 import { downloadCsv } from '@/lib/storage/download'
+import {
+  buildWhatsAppBelanjaMessage,
+  buildWhatsAppUrl,
+} from '@/lib/plans/whatsapp'
 import type { SavedProduct } from '@/lib/storage/household-needs'
 
 const authStore = useAuthStore()
@@ -767,6 +771,48 @@ function exportCsv(): void {
   toastStore.success('CSV daftar belanja berhasil diunduh.')
 }
 
+function shareWhatsApp(): void {
+  const items: { needName: string; productTitle: string; platform: string; hargaEfektif: number }[] = []
+  let total = 0
+
+  for (const need of needs.value) {
+    if (!need.chosen_product_id) continue
+    const product = productsFor(need.id).find((p) => p.id === need.chosen_product_id)
+    if (!product) continue
+
+    const efektif = hargaEfektifProduk({
+      harga: product.price,
+      ongkir: product.shipping_cost,
+      voucher: product.voucher_discount,
+    })
+    if (!efektif.ok) continue
+
+    items.push({
+      needName: need.name,
+      productTitle: product.title,
+      platform: product.platform,
+      hargaEfektif: efektif.value,
+    })
+    total += efektif.value
+  }
+
+  if (items.length === 0) {
+    toastStore.info('Pilih minimal satu produk terpilih sebelum berbagi.')
+    return
+  }
+
+  const message = buildWhatsAppBelanjaMessage(items, total)
+  const url = buildWhatsAppUrl(import.meta.env.VITE_WA_NUMBER, message)
+
+  if (!url) {
+    toastStore.error('Nomor WhatsApp belum dikonfigurasi. Isi VITE_WA_NUMBER di .env.')
+    return
+  }
+
+  window.open(url, '_blank')
+  toastStore.success('Daftar belanja dibuka di WhatsApp.')
+}
+
 </script>
 
 <template>
@@ -1289,6 +1335,9 @@ function exportCsv(): void {
         </h2>
         <button type="button" class="btn btn-secondary" @click="exportCsv">
           Ekspor CSV
+        </button>
+        <button type="button" class="btn btn-primary" @click="shareWhatsApp">
+          Share WhatsApp
         </button>
       </div>
       <div class="mt-4 grid gap-4 md:grid-cols-4">
