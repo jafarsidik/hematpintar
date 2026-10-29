@@ -183,6 +183,105 @@ function trackUpgrade(): void {
       </section>
     </div>
 
+    <section class="card p-5" aria-labelledby="judul-perbandingan">
+      <h2 id="judul-perbandingan" class="text-base font-semibold text-slate-900">
+        Perbedaan Paket
+      </h2>
+      <p class="mt-2 text-sm leading-relaxed text-slate-600">
+        Free cocok untuk mencoba semua modul. Plus untuk pemakaian pribadi yang
+        lebih intensif. Bisnis untuk usaha dengan banyak skenario dan simulasi
+        tanpa batas.
+      </p>
+      <table class="mt-4 w-full text-sm border-collapse border border-slate-200">
+        <thead>
+          <tr class="border-b border-slate-200 text-left text-xs text-slate-500">
+            <th class="pb-3 w-1/3">Fitur</th>
+            <th class="pb-3">Free</th>
+            <th class="pb-3">Plus</th>
+            <th class="pb-3">Bisnis</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <tr class="group">
+            <td class="pb-3">Simulasi per modul</td>
+            <td class="pb-3">5</td>
+            <td class="pb-3">50</td>
+            <td class="pb-3">Tanpa batas</td>
+          </tr>
+          <tr class="group">
+            <td class="pb-3">Ekspor CSV per simulasi</td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+          </tr>
+          <tr class="group">
+            <td class="pb-3">Ekspor bulk CSV semua simulasi</td>
+            <td class="pb-3 text-slate-400">✗</td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+          </tr>
+          <tr class="group">
+            <td class="pb-3">Perbandingan produk tersimpan</td>
+            <td class="pb-3 text-slate-400">✗</td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+          </tr>
+          <tr class="group">
+            <td class="pb-3">Laporan keuntungan bisnis</td>
+            <td class="pb-3 text-slate-400">✗</td>
+            <td class="pb-3 text-slate-400">✗</td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+          </tr>
+          <tr class="group">
+            <td class="pb-3">Pembelian manual via WhatsApp</td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+            <td class="pb-3"><span class="text-success-600">✓</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <section
+        class="card p-5 border-l-4 border-primary-600"
+        aria-labelledby="judul-kelebihan-plus"
+      >
+        <div class="flex items-center gap-2">
+          <svg class="h-5 w-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+          <h3 id="judul-kelebihan-plus" class="text-sm font-semibold text-slate-900">
+            Kelebihan Paket Plus
+          </h3>
+        </div>
+        <ul class="mt-3 space-y-2 text-sm text-slate-600 list-disc pl-5">
+          <li>Ekspor bulk CSV semua simulasi sekaligus</li>
+          <li>Bandingkan hingga 3 toko dalam satu kebutuhan</li>
+          <li>Riwayat simulasi lebih lama (hingga 50 per modul)</li>
+        </ul>
+      </section>
+
+      <section
+        class="card p-5 border-l-4 border-success-600"
+        aria-labelledby="judul-kelebihan-bisnis"
+      >
+        <div class="flex items-center gap-2">
+          <svg class="h-5 w-5 text-success-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+          <h3 id="judul-kelebihan-bisnis" class="text-sm font-semibold text-slate-900">
+            Kelebihan Paket Bisnis
+          </h3>
+        </div>
+        <ul class="mt-3 space-y-2 text-sm text-slate-600 list-disc pl-5">
+          <li>Simulasi tanpa batas per modul</li>
+          <li>Laporan keuntungan dan margin bisnis lengkap</li>
+          <li>Semua fitur Plus termasuk di dalamnya</li>
+        </ul>
+      </section>
+    </div>
+
     <section class="card p-5" aria-labelledby="judul-pembelian">
       <h2 id="judul-pembelian" class="text-base font-semibold text-slate-900">
         Cara membeli dan aktivasi
