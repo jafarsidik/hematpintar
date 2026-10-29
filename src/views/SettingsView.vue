@@ -268,9 +268,10 @@ async function confirmDeleteAll(): Promise<void> {
         <StatusBadge label="Perlu diketahui" tone="warning" />
       </div>
       <p class="mt-2 text-sm leading-relaxed text-warning-700">
-        Data tersimpan di perangkat ini dan bisa hilang jika data browser atau
-        penyimpanan situs dihapus. Tidak ada sinkronisasi cloud pada tahap ini.
-        Unduh backup JSON secara berkala.
+        Data utama tersimpan di perangkat ini dan bisa hilang jika data browser
+        atau penyimpanan situs dihapus. Jika login, Anda dapat mencadangkan
+        simulasi ke akun dari halaman Riwayat. Tidak ada sinkronisasi otomatis;
+        unduh backup JSON secara berkala.
       </p>
     </section>
 

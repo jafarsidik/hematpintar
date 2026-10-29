@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AccountSyncCard from '@/components/AccountSyncCard.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import SyncStatusBadge from '@/components/SyncStatusBadge.vue'
 import { fileDateStamp, formatDateTime } from '@/lib/format-date'
 import { MODULES, moduleInfo } from '@/lib/modules'
 import { downloadCsv } from '@/lib/storage/download'
@@ -166,6 +168,8 @@ function exportCsv(): void {
       </div>
     </header>
 
+    <AccountSyncCard />
+
     <div class="flex flex-wrap items-end gap-2">
       <div>
         <label for="filter-riwayat" class="label-base">Filter modul</label>
@@ -243,6 +247,7 @@ function exportCsv(): void {
                 :label="moduleInfo(simulation.moduleType).shortLabel"
                 tone="neutral"
               />
+              <SyncStatusBadge :record="simulation" />
             </div>
             <p class="mt-1 text-xs text-slate-500">
               {{ moduleInfo(simulation.moduleType).label }} · Diperbarui

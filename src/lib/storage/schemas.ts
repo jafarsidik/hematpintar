@@ -175,6 +175,12 @@ const simulationBaseShape = {
       (value) => value === SCHEMA_VERSION,
       `Versi skema tidak didukung; versi saat ini ${SCHEMA_VERSION}.`,
     ),
+  /**
+   * Local-only sync metadata. These fields never go to the cloud payload;
+   * they prove which account received this version of the record.
+   */
+  syncedAt: tanggalSchema.optional(),
+  cloudUserId: uuidSchema.optional(),
 }
 
 export const simulationSchema = z.discriminatedUnion('moduleType', [
@@ -241,6 +247,8 @@ export interface SimulationRecord {
   createdAt: string
   updatedAt: string
   schemaVersion: number
+  syncedAt?: string
+  cloudUserId?: string
 }
 
 export const backupSchema = z

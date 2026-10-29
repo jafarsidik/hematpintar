@@ -8,6 +8,8 @@ import {
   duplicateSimulation,
   getSimulationById,
   listSimulations,
+  markSimulationsSynced,
+  putSimulationRecords,
   removeSimulation,
   simulationRepository,
   updateSimulation,
@@ -175,6 +177,78 @@ describe('simulation repository', () => {
 
     const all = expectOk(await listSimulations(undefined, db))
     expect(all).toHaveLength(2)
+  })
+
+  it('menandai simulasi sebagai tercadangkan ke akun', async () => {
+    const created = expectOk(await createSimulation(householdInput(), db))
+    const userId = '11111111-1111-4111-8111-111111111111'
+    const syncedAt = '2999-02-01T00:00:00.000Z'
+
+    expectOk(await markSimulationsSynced([created.id], userId, syncedAt, db))
+
+    const found = expectOk(await getSimulationById(created.id, db))
+    expect(found?.syncedAt).toBe(syncedAt)
+    expect(found?.cloudUserId).toBe(userId)
+  })
+
+  it('tidak mewariskan status tercadangkan ke salinan', async () => {
+    const created = expectOk(await createSimulation(householdInput(), db))
+    const userId = '11111111-1111-4111-8111-111111111111'
+    expectOk(
+      await markSimulationsSynced(
+        [created.id],
+        userId,
+        '2999-02-01T00:00:00.000Z',
+        db,
+      ),
+    )
+
+    const copy = expectOk(await duplicateSimulation(created.id, db))
+
+    expect(copy.syncedAt).toBeUndefined()
+    expect(copy.cloudUserId).toBeUndefined()
+  })
+
+  it('menyimpan record hasil pemulihan akun setelah validasi', async () => {
+    const timestamp = '2026-03-01T00:00:00.000Z'
+    const userId = '11111111-1111-4111-8111-111111111111'
+    const remote = {
+      id: crypto.randomUUID(),
+      moduleType: 'household' as const,
+      name: 'Belanja dari akun',
+      payload: householdInput().payload,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      schemaVersion: 1,
+      syncedAt: timestamp,
+      cloudUserId: userId,
+    }
+
+    expectOk(await putSimulationRecords([remote], db))
+
+    const found = expectOk(await getSimulationById(remote.id, db))
+    expect(found).toMatchObject({
+      id: remote.id,
+      name: 'Belanja dari akun',
+      syncedAt: timestamp,
+      cloudUserId: userId,
+    })
+  })
+
+  it('menolak record pemulihan yang tidak valid tanpa menulis apa pun', async () => {
+    const timestamp = '2026-03-01T00:00:00.000Z'
+    const invalid = {
+      id: crypto.randomUUID(),
+      moduleType: 'household' as const,
+      name: 'Rusak',
+      payload: { ...householdInput().payload, budget: -1 },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      schemaVersion: 1,
+    }
+
+    expectErr(await putSimulationRecords([invalid], db), 'VALIDASI_GAGAL')
+    expect(expectOk(await listSimulations(undefined, db))).toHaveLength(0)
   })
 
   it('menghapus simulasi dan menolak id yang tidak ada', async () => {

@@ -1,14 +1,36 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import Toast from '@/components/Toast.vue'
 import { MODULES } from '@/lib/modules'
 import { ensureSettings } from '@/lib/storage/db'
 import { errorMessage } from '@/lib/storage/errors'
+import { useAuthStore } from '@/stores/auth'
+import { useEntitlementStore } from '@/stores/entitlements'
 import { useToastStore } from '@/stores/toast'
 
 const toastStore = useToastStore()
+const authStore = useAuthStore()
+const entitlementStore = useEntitlementStore()
+
+const accountLabel = computed(() =>
+  authStore.isAuthenticated ? 'Akun & paket' : 'Masuk / Akun',
+)
+
+const planTone = computed(() =>
+  entitlementStore.isPremium ? ('success' as const) : ('neutral' as const),
+)
+
+watch(
+  () => authStore.user?.id,
+  () => {
+    void entitlementStore.refresh()
+  },
+)
 
 onMounted(async () => {
+  // Auth is optional and must never block local-only startup.
+  void authStore.initialize()
   const result = await ensureSettings()
   if (!result.ok) toastStore.error(errorMessage(result.errors))
 })
@@ -91,10 +113,24 @@ function onDrawerClick(event: MouseEvent): void {
         >
           {{ item.label }}
         </RouterLink>
+
+        <RouterLink
+          to="/login"
+          class="mb-1 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+          exact-active-class="bg-primary-50 font-semibold text-primary-700 hover:bg-primary-50"
+        >
+          <span class="min-w-0 truncate">{{ accountLabel }}</span>
+          <StatusBadge
+            v-if="authStore.isAuthenticated"
+            :label="entitlementStore.planLabel"
+            :tone="planTone"
+          />
+        </RouterLink>
       </nav>
 
       <p class="border-t border-slate-200 px-5 py-4 text-xs leading-relaxed text-slate-500">
-        Data disimpan di perangkat ini. Unduh backup dari Pengaturan.
+        Data utama tersimpan di perangkat ini. Login dan cadangan ke akun
+        bersifat opsional.
       </p>
     </aside>
 
@@ -182,10 +218,25 @@ function onDrawerClick(event: MouseEvent): void {
           >
             {{ item.label }}
           </RouterLink>
+
+          <RouterLink
+            to="/login"
+            class="mb-1 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+            exact-active-class="bg-primary-50 font-semibold text-primary-700 hover:bg-primary-50"
+            @click="closeMenu"
+          >
+            <span class="min-w-0 truncate">{{ accountLabel }}</span>
+            <StatusBadge
+              v-if="authStore.isAuthenticated"
+              :label="entitlementStore.planLabel"
+              :tone="planTone"
+            />
+          </RouterLink>
         </nav>
 
         <p class="border-t border-slate-200 px-5 py-4 text-xs leading-relaxed text-slate-500">
-          Data disimpan di perangkat ini. Unduh backup dari Pengaturan.
+          Data utama tersimpan di perangkat ini. Login dan cadangan ke akun
+          bersifat opsional.
         </p>
       </div>
     </dialog>

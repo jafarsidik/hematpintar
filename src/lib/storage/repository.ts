@@ -1,4 +1,9 @@
-import { fail, ok, type Result } from '@/lib/calc/result'
+import {
+  fail,
+  ok,
+  type Result,
+  type ValidationError,
+} from '@/lib/calc/result'
 import { db, type HematPintarDatabase } from './db'
 import { storageError, zodValidationErrors } from './errors'
 import {
@@ -137,6 +142,8 @@ export async function duplicateSimulation(
     payload: structuredClone(existing.payload),
     createdAt: timestamp,
     updatedAt: timestamp,
+    syncedAt: undefined,
+    cloudUserId: undefined,
   }
 
   const parsed = simulationSchema.safeParse(copy)
@@ -145,6 +152,83 @@ export async function duplicateSimulation(
   try {
     await database.simulations.add(parsed.data)
     return ok(parsed.data)
+  } catch {
+    return fail(storageError('simpan'))
+  }
+}
+
+/**
+ * Writes already-downloaded records after validating all of them. The whole
+ * batch is rejected before any write if one record is invalid.
+ */
+export async function putSimulationRecords(
+  records: readonly SimulationRecord[],
+  database: HematPintarDatabase = db,
+): Promise<Result<void>> {
+  const parsedRecords: SimulationRecord[] = []
+  const errors: ValidationError[] = []
+
+  records.forEach((record, index) => {
+    const parsed = simulationSchema.safeParse(record)
+    if (!parsed.success) {
+      errors.push(
+        ...zodValidationErrors(parsed.error).map((error) => ({
+          ...error,
+          field: `records.${index}.${error.field}`,
+        })),
+      )
+      return
+    }
+    parsedRecords.push(parsed.data)
+  })
+
+  if (errors.length > 0) return fail(errors)
+
+  try {
+    await database.simulations.bulkPut(parsedRecords)
+    return ok(undefined)
+  } catch {
+    return fail(storageError('simpan'))
+  }
+}
+
+/**
+ * Marks local records as backed up to a specific account. A record edited
+ * after the upload started is left unmarked so the UI never claims a newer
+ * version is already in the account.
+ */
+export async function markSimulationsSynced(
+  ids: readonly string[],
+  userId: string,
+  syncedAt: string,
+  database: HematPintarDatabase = db,
+): Promise<Result<void>> {
+  const syncedTime = Date.parse(syncedAt)
+  if (!userId || !Number.isFinite(syncedTime)) {
+    return fail(storageError('simpan'))
+  }
+
+  try {
+    await database.transaction('rw', database.simulations, async () => {
+      for (const id of ids) {
+        const existing = await database.simulations.get(id)
+        if (!existing) continue
+
+        const updatedTime = Date.parse(existing.updatedAt)
+        if (!Number.isFinite(updatedTime) || updatedTime > syncedTime) continue
+
+        const next: SimulationRecord = {
+          ...existing,
+          syncedAt,
+          cloudUserId: userId,
+        }
+        const parsed = simulationSchema.safeParse(next)
+        if (!parsed.success) continue
+
+        await database.simulations.put(parsed.data)
+      }
+    })
+    return ok(undefined)
   } catch {
     return fail(storageError('simpan'))
   }
@@ -175,4 +259,6 @@ export const simulationRepository = {
   update: updateSimulation,
   duplicate: duplicateSimulation,
   remove: removeSimulation,
+  putRecords: putSimulationRecords,
+  markSynced: markSimulationsSynced,
 } as const

@@ -1,8 +1,8 @@
 # HematPintar
 
-Fondasi aplikasi HematPintar: Vue 3 + Vite + TypeScript, PWA, navigasi
-responsif, komponen UI bersama, penyimpanan lokal Dexie, backup/CSV, dan mesin
-kalkulasi murni. **Form perhitungan tiap modul belum dibangun.**
+Aplikasi HematPintar: Vue 3 + Vite + TypeScript, PWA, navigasi responsif,
+komponen UI bersama, penyimpanan lokal Dexie, backup/CSV, mesin kalkulasi murni,
+serta login opsional dan cadangan simulasi ke akun Supabase.
 
 Sumber kebenaran produk dan rumus ada di [`docs/PRD.md`](docs/PRD.md).
 
@@ -27,6 +27,10 @@ Isi `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY`. Jika kosong, aplikasi
 tetap berjalan dan `src/lib/supabase/client.ts` mengekspor `supabase = null`.
 Jangan pernah menaruh service role key di frontend.
 
+Setelah env diisi, jalankan migrasi
+`supabase/migrations/20261029120000_optional_auth_entitlements.sql` secara
+manual di Supabase SQL Editor. Migrasi tidak dijalankan otomatis oleh aplikasi.
+
 ## Perintah
 
 | Perintah | Fungsi |
@@ -46,13 +50,13 @@ src/
 ├── lib/
 │   ├── calc/          # SATU-SATUNYA tempat logika keuangan (fungsi murni)
 │   ├── storage/       # Dexie/IndexedDB, schema Zod, repository, CSV, backup
-│   └── supabase/      # client Supabase yang aman saat env kosong
+│   └── supabase/      # client opsional, sinkronisasi simulasi, entitlement
 ├── router/
-├── stores/            # Pinia: simulasi dan toast
-├── views/             # dashboard, riwayat, pengaturan, panduan, halaman modul
+├── stores/            # Pinia: auth, entitlements, simulasi, cloud sync, toast
+├── views/             # dashboard, riwayat, pengaturan, login, halaman modul
 ├── App.vue
 └── main.ts
-supabase/migrations/   # migrasi SQL (masih kosong)
+supabase/migrations/   # migrasi SQL untuk dijalankan manual di SQL Editor
 ```
 
 ## Penyimpanan lokal
@@ -65,8 +69,11 @@ supabase/migrations/   # migrasi SQL (masih kosong)
   dan remove. Kegagalan IndexedDB dikembalikan sebagai error, bukan sukses.
 - CSV diekspor per modul. Backup JSON berisi seluruh tabel dan divalidasi penuh
   sebelum impor; berkas rusak tidak mengubah data lama.
-- Data hanya tersimpan di perangkat. Tidak ada sinkronisasi cloud pada tahap
-  ini.
+- Data utama selalu tersimpan di perangkat. Login bersifat opsional. Setelah
+  login, halaman Riwayat menyediakan tombol “Cadangkan ke akun” dan “Pulihkan
+  dari akun”; tidak ada sinkronisasi otomatis.
+- Konflik memakai `updated_at` terbaru dan menunggu konfirmasi pengguna. Data
+  lokal yang tidak ada di akun tidak dihapus otomatis.
 
 ## Mesin kalkulasi
 
