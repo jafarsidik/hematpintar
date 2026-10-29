@@ -964,11 +964,26 @@ function shareWhatsApp(): void {
       <div v-if="needs.length === 0 && !needsLoading" class="mt-6">
         <EmptyState
           title="Belum ada kebutuhan"
-          description="Buat kebutuhan pertama, misalnya beras untuk sebulan, lalu tambahkan produk kandidat."
+          description="Pilih contoh kategori untuk segera memulai, atau buat kebutuhan baru dari nol."
         >
-          <button type="button" class="btn btn-primary" @click="showAddNeed = true">
-            Buat kebutuhan
-          </button>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <button
+              v-for="(kategori, index) in EXAMPLE_CATEGORIES"
+              :key="index"
+              type="button"
+              class="btn btn-secondary border flex-1 min-w-[140px]"
+              @click="isiContohKategori(index)"
+            >
+              {{ kategori.name }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary flex-1 min-w-[140px]"
+              @click="showAddNeed = true"
+            >
+              Buat dari nol
+            </button>
+          </div>
         </EmptyState>
       </div>
 
