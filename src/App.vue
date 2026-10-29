@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import StatusBadge from '@/components/StatusBadge.vue'
 import Toast from '@/components/Toast.vue'
+import UpgradeDialog from '@/components/UpgradeDialog.vue'
 import { MODULES } from '@/lib/modules'
 import { ensureSettings } from '@/lib/storage/db'
 import { errorMessage } from '@/lib/storage/errors'
+import { useAnalyticsStore } from '@/stores/analytics'
 import { useAuthStore } from '@/stores/auth'
 import { useEntitlementStore } from '@/stores/entitlements'
 import { useToastStore } from '@/stores/toast'
 
+const route = useRoute()
 const toastStore = useToastStore()
 const authStore = useAuthStore()
 const entitlementStore = useEntitlementStore()
+const analyticsStore = useAnalyticsStore()
 
 const accountLabel = computed(() =>
   authStore.isAuthenticated ? 'Akun & paket' : 'Masuk / Akun',
@@ -26,6 +31,17 @@ watch(
   () => {
     void entitlementStore.refresh()
   },
+)
+
+watch(
+  () => route.path,
+  (path) => {
+    const activeModule = MODULES.find((module) => module.path === path)
+    if (activeModule) {
+      void analyticsStore.track('module_open', activeModule.type)
+    }
+  },
+  { immediate: true },
 )
 
 onMounted(async () => {
@@ -262,6 +278,7 @@ function onDrawerClick(event: MouseEvent): void {
       </div>
     </nav>
 
+    <UpgradeDialog />
     <Toast />
   </div>
 </template>

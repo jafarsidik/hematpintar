@@ -91,7 +91,7 @@ describe('entitlement store', () => {
     await store.refresh()
 
     expect(store.plan).toBe('business')
-    expect(store.planLabel).toBe('Business')
+    expect(store.planLabel).toBe('Bisnis')
   })
 
   it('kembali ke free saat pengguna keluar', async () => {

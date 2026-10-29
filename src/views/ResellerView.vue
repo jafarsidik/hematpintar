@@ -18,7 +18,9 @@ import {
   type LabaPerPesananInput,
   type StatusLabaReseller,
 } from '@/lib/calc/reseller'
+import { useSimulationFeedback } from '@/composables/useSimulationFeedback'
 import { fileDateStamp } from '@/lib/format-date'
+import { canUse } from '@/lib/plans/access'
 import { simulationsToCsv } from '@/lib/storage/csv'
 import { downloadCsv } from '@/lib/storage/download'
 import { errorMessage } from '@/lib/storage/errors'
@@ -29,6 +31,8 @@ import {
   type ResellerPayload,
   type SimulationRecord,
 } from '@/lib/storage/schemas'
+import { useAnalyticsStore } from '@/stores/analytics'
+import { useEntitlementStore } from '@/stores/entitlements'
 import { useSimulationStore } from '@/stores/simulations'
 import { useToastStore } from '@/stores/toast'
 
@@ -76,6 +80,17 @@ const route = useRoute()
 const router = useRouter()
 const simulationStore = useSimulationStore()
 const toastStore = useToastStore()
+const entitlementStore = useEntitlementStore()
+const analyticsStore = useAnalyticsStore()
+const { reportSaveError } = useSimulationFeedback()
+
+const canCompare = computed(() =>
+  canUse('scenario-comparison', entitlementStore.plan),
+)
+
+function trackUpgradeClick(): void {
+  void analyticsStore.track('upgrade_click', 'reseller')
+}
 
 const currentSimulationId = ref<string | null>(null)
 const loadingSaved = ref(false)
@@ -662,7 +677,7 @@ async function save(): Promise<void> {
   saving.value = false
 
   if (!result.ok) {
-    toastStore.error(errorMessage(result.errors))
+    reportSaveError(result, 'reseller')
     return
   }
 
@@ -684,7 +699,7 @@ async function duplicateCurrent(): Promise<void> {
 
   const result = await simulationStore.duplicate(currentSimulationId.value)
   if (!result.ok) {
-    toastStore.error(errorMessage(result.errors))
+    reportSaveError(result, 'reseller')
     return
   }
 
@@ -1242,7 +1257,31 @@ onMounted(async () => {
         kebutuhan modal dapat berbeda.
       </p>
 
-      <p v-if="simulationStore.loading" class="mt-4 text-sm text-slate-600">
+      <div
+        v-if="!canCompare"
+        class="mt-4 rounded-lg border border-primary-200 bg-primary-50 p-4"
+      >
+        <p class="text-sm font-semibold text-primary-800">
+          Fitur paket Plus
+        </p>
+        <p class="mt-1 text-sm leading-relaxed text-primary-700">
+          Perbandingan produk tersimpan tersedia di paket Plus dan Bisnis.
+          Simulasi dan hasil hitung Anda tetap bisa disimpan serta diekspor
+          pada paket Free.
+        </p>
+        <RouterLink
+          to="/pricing"
+          class="btn btn-secondary mt-3"
+          @click="trackUpgradeClick"
+        >
+          Lihat Paket &amp; Upgrade
+        </RouterLink>
+      </div>
+
+      <p
+        v-else-if="simulationStore.loading"
+        class="mt-4 text-sm text-slate-600"
+      >
         Memuat simulasi tersimpan...
       </p>
       <p

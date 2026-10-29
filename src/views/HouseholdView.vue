@@ -31,6 +31,7 @@ import {
   type HouseholdPayload,
   type SimulationRecord,
 } from '@/lib/storage/schemas'
+import { useSimulationFeedback } from '@/composables/useSimulationFeedback'
 import { useSimulationStore } from '@/stores/simulations'
 import { useToastStore } from '@/stores/toast'
 
@@ -119,6 +120,7 @@ const route = useRoute()
 const router = useRouter()
 const simulationStore = useSimulationStore()
 const toastStore = useToastStore()
+const { reportSaveError } = useSimulationFeedback()
 
 const currentSimulationId = ref<string | null>(null)
 const loadingSaved = ref(false)
@@ -783,7 +785,7 @@ async function save(): Promise<void> {
   saving.value = false
 
   if (!result.ok) {
-    toastStore.error(errorMessage(result.errors))
+    reportSaveError(result, 'household')
     return
   }
 
@@ -805,7 +807,7 @@ async function duplicateCurrent(): Promise<void> {
 
   const result = await simulationStore.duplicate(currentSimulationId.value)
   if (!result.ok) {
-    toastStore.error(errorMessage(result.errors))
+    reportSaveError(result, 'household')
     return
   }
 

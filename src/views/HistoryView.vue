@@ -6,12 +6,15 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import SyncStatusBadge from '@/components/SyncStatusBadge.vue'
+import { useSimulationFeedback } from '@/composables/useSimulationFeedback'
 import { fileDateStamp, formatDateTime } from '@/lib/format-date'
 import { MODULES, moduleInfo } from '@/lib/modules'
+import { canUse } from '@/lib/plans/access'
 import { downloadCsv } from '@/lib/storage/download'
 import { errorMessage } from '@/lib/storage/errors'
 import { simulationsToCsv } from '@/lib/storage/csv'
 import type { ModuleType, SimulationRecord } from '@/lib/storage/schemas'
+import { useEntitlementStore } from '@/stores/entitlements'
 import { useSimulationStore } from '@/stores/simulations'
 import { useToastStore } from '@/stores/toast'
 
@@ -19,7 +22,13 @@ type FilterValue = 'all' | ModuleType
 
 const simulationStore = useSimulationStore()
 const toastStore = useToastStore()
+const entitlementStore = useEntitlementStore()
+const { reportSaveError } = useSimulationFeedback()
 const router = useRouter()
+
+const canBulkExport = computed(() =>
+  canUse('bulk-csv-export', entitlementStore.plan),
+)
 
 const filter = ref<FilterValue>('all')
 const exportModule = ref<ModuleType>('household')
@@ -91,7 +100,7 @@ async function saveRename(): Promise<void> {
 async function duplicate(simulation: SimulationRecord): Promise<void> {
   const result = await simulationStore.duplicate(simulation.id)
   if (!result.ok) {
-    toastStore.error(errorMessage(result.errors))
+    reportSaveError(result, simulation.moduleType)
     return
   }
 
@@ -113,6 +122,13 @@ async function confirmDelete(): Promise<void> {
 }
 
 function exportCsv(): void {
+  if (!canBulkExport.value) {
+    toastStore.info(
+      'Ekspor CSV dari Riwayat tersedia di paket Plus. Ekspor CSV per simulasi tetap tersedia di tiap modul.',
+    )
+    return
+  }
+
   const module = exportModule.value
   const records = simulationStore.items.filter(
     (simulation) => simulation.moduleType === module,
@@ -152,6 +168,7 @@ function exportCsv(): void {
             id="export-modul"
             v-model="exportModule"
             class="input-base w-44"
+            :disabled="!canBulkExport"
           >
             <option
               v-for="module in MODULES"
@@ -162,11 +179,36 @@ function exportCsv(): void {
             </option>
           </select>
         </div>
-        <button type="button" class="btn btn-secondary" @click="exportCsv">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="!canBulkExport"
+          :title="
+            canBulkExport
+              ? 'Ekspor CSV per modul'
+              : 'Tersedia di paket Plus dan Bisnis'
+          "
+          @click="exportCsv"
+        >
           Ekspor CSV
         </button>
+        <RouterLink
+          v-if="!canBulkExport"
+          to="/pricing"
+          class="pb-2 text-sm font-medium text-primary-700 underline underline-offset-2 hover:text-primary-800"
+        >
+          Fitur Plus
+        </RouterLink>
       </div>
     </header>
+
+    <p
+      v-if="!canBulkExport"
+      class="rounded-lg border border-primary-200 bg-primary-50 p-3 text-sm leading-relaxed text-primary-700"
+    >
+      Ekspor CSV seluruh modul dari Riwayat tersedia di paket Plus. Ekspor CSV
+      per simulasi tetap tersedia gratis di setiap modul.
+    </p>
 
     <AccountSyncCard />
 

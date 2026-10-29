@@ -10,9 +10,12 @@ import {
   parseBackup,
   serializeBackup,
 } from '@/lib/storage/backup'
+import { isSupabaseConfigured } from '@/lib/supabase/client'
 import { downloadTextFile } from '@/lib/storage/download'
 import { errorMessage } from '@/lib/storage/errors'
 import type { BackupData } from '@/lib/storage/schemas'
+import { useAnalyticsStore } from '@/stores/analytics'
+import { useAuthStore } from '@/stores/auth'
 import { useSimulationStore } from '@/stores/simulations'
 import { useToastStore } from '@/stores/toast'
 
@@ -24,6 +27,8 @@ interface PendingImport {
 
 const simulationStore = useSimulationStore()
 const toastStore = useToastStore()
+const authStore = useAuthStore()
+const analyticsStore = useAnalyticsStore()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const pendingImport = ref<PendingImport | null>(null)
@@ -134,6 +139,11 @@ async function confirmImport(): Promise<void> {
   )
 }
 
+function onAnalyticsConsentChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  analyticsStore.setConsent(input.checked)
+}
+
 async function confirmDeleteAll(): Promise<void> {
   busy.value = true
   const result = await deleteAllData()
@@ -229,6 +239,58 @@ async function confirmDeleteAll(): Promise<void> {
       <p class="mt-3 text-xs leading-relaxed text-slate-500">
         Impor akan memvalidasi seluruh isi berkas terlebih dahulu. Berkas rusak
         ditolak dan data lama tidak diubah.
+      </p>
+    </section>
+
+    <section class="card p-5" aria-labelledby="judul-analitik">
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 id="judul-analitik" class="text-base font-semibold text-slate-900">
+          Analitik anonim
+        </h2>
+        <StatusBadge
+          :label="analyticsStore.consent ? 'Aktif' : 'Mati'"
+          :tone="analyticsStore.consent ? 'success' : 'neutral'"
+        />
+      </div>
+      <p class="mt-2 text-sm leading-relaxed text-slate-600">
+        Jika diaktifkan dan Anda login, aplikasi mencatat event sederhana
+        <strong class="font-medium text-slate-900">
+          buka modul, simpan simulasi, dan klik upgrade
+        </strong>
+        ke tabel Supabase milik aplikasi. Tidak ada nominal, nama produk, email,
+        isi simulasi, atau data finansial yang dikirim. Tanpa login, tidak ada
+        event yang dikirim.
+      </p>
+
+      <label
+        for="analitik-consent"
+        class="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3"
+      >
+        <input
+          id="analitik-consent"
+          type="checkbox"
+          class="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+          :checked="analyticsStore.consent"
+          @change="onAnalyticsConsentChange"
+        />
+        <span class="text-sm leading-relaxed text-slate-700">
+          Saya setuju mengirim event analitik anonim saat saya login.
+        </span>
+      </label>
+
+      <p
+        v-if="!isSupabaseConfigured"
+        class="mt-3 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm text-warning-700"
+      >
+        Supabase belum dikonfigurasi, jadi event tidak akan dikirim. Preferensi
+        ini tetap disimpan di perangkat.
+      </p>
+      <p
+        v-else-if="!authStore.isAuthenticated"
+        class="mt-3 text-xs leading-relaxed text-slate-500"
+      >
+        Anda belum login. Event baru akan dikirim setelah login dengan
+        persetujuan ini tetap aktif.
       </p>
     </section>
 

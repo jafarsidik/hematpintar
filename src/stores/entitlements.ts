@@ -1,22 +1,17 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { PLANS, type Plan } from '@/config/plans'
 import {
   isSupabaseConfigured,
   supabase,
 } from '@/lib/supabase/client'
 import { useAuthStore } from '@/stores/auth'
 
-export type Plan = 'free' | 'plus' | 'business'
+export type { Plan }
 
 interface EntitlementRow {
   plan: string | null
   valid_until: string | null
-}
-
-const PLAN_LABELS: Record<Plan, string> = {
-  free: 'Free',
-  plus: 'Plus',
-  business: 'Business',
 }
 
 /**
@@ -45,7 +40,7 @@ export const useEntitlementStore = defineStore('entitlements', () => {
   const error = ref<string | null>(null)
 
   const isPremium = computed(() => plan.value !== 'free')
-  const planLabel = computed(() => PLAN_LABELS[plan.value])
+  const planLabel = computed(() => PLANS[plan.value].name)
 
   let requestId = 0
 
