@@ -8,6 +8,7 @@ const supabaseMock = vi.hoisted(() => ({
     signOut: vi.fn(),
     getUser: vi.fn(),
     updateUser: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
   },
 }))
 
@@ -16,12 +17,11 @@ vi.mock('@/lib/supabase/client', () => ({
   isSupabaseConfigured: true,
 }))
 
-import { changePassword, signIn, signOut, signUp } from './service'
+import { changePassword, signIn, signOut, signUp, resetPasswordForEmail } from './service'
 
 const user = {
   id: '11111111-1111-4111-8111-111111111111',
   email: 'budi@contoh.test',
-  user_metadata: { username: 'budi' },
 } as unknown as User
 
 const session = {
@@ -34,7 +34,6 @@ const session = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.stubEnv('VITE_AUTH_EMAIL_DOMAIN', 'contoh.test')
   supabaseMock.auth.signUp.mockResolvedValue({
     data: { user, session },
     error: null,
@@ -52,6 +51,7 @@ beforeEach(() => {
     data: { user },
     error: null,
   })
+  supabaseMock.auth.resetPasswordForEmail.mockResolvedValue({ error: null })
 })
 
 afterEach(() => {
@@ -59,41 +59,40 @@ afterEach(() => {
 })
 
 describe('auth service', () => {
-  it('mendaftar dengan email turunan username dan metadata username', async () => {
-    const result = await signUp(' Budi_01 ', '12345678')
+  it('mendaftar dengan email dan password', async () => {
+    const result = await signUp(' Budi_01@Contoh.Test ', '12345678')
 
     expect(result.ok).toBe(true)
     expect(supabaseMock.auth.signUp).toHaveBeenCalledWith({
       email: 'budi_01@contoh.test',
       password: '12345678',
-      options: { data: { username: 'budi_01' } },
     })
   })
 
   it('menolak pendaftaran tidak valid tanpa memanggil Supabase', async () => {
-    const shortUsername = await signUp('ab', '12345678')
-    const shortPassword = await signUp('budi', '1234567')
+    const badEmail = await signUp('budi', '12345678')
+    const shortPassword = await signUp('budi@contoh.test', '1234567')
 
-    expect(shortUsername.ok).toBe(false)
+    expect(badEmail.ok).toBe(false)
     expect(shortPassword.ok).toBe(false)
     expect(supabaseMock.auth.signUp).not.toHaveBeenCalled()
   })
 
-  it('memetakan username yang sudah dipakai saat mendaftar', async () => {
+  it('memetakan email yang sudah dipakai saat mendaftar', async () => {
     supabaseMock.auth.signUp.mockResolvedValue({
       data: { user: null, session: null },
       error: { message: 'User already registered', code: 'user_already_exists' },
     })
 
-    const result = await signUp('budi', '12345678')
+    const result = await signUp('budi@contoh.test', '12345678')
 
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors[0]?.message).toBe('Username sudah digunakan.')
+      expect(result.errors[0]?.message).toBe('Email sudah terdaftar.')
     }
   })
 
-  it('memetakan identitas kosong Supabase sebagai username yang sudah dipakai', async () => {
+  it('memetakan identitas kosong Supabase sebagai email yang sudah dipakai', async () => {
     supabaseMock.auth.signUp.mockResolvedValue({
       data: {
         user: { ...user, identities: [] },
@@ -102,16 +101,16 @@ describe('auth service', () => {
       error: null,
     })
 
-    const result = await signUp('budi', '12345678')
+    const result = await signUp('budi@contoh.test', '12345678')
 
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors[0]?.message).toBe('Username sudah digunakan.')
+      expect(result.errors[0]?.message).toBe('Email sudah terdaftar.')
     }
   })
 
-  it('masuk dengan username dan password', async () => {
-    const result = await signIn('Budi', '12345678')
+  it('masuk dengan email dan password', async () => {
+    const result = await signIn('Budi@Contoh.Test', '12345678')
 
     expect(result.ok).toBe(true)
     expect(supabaseMock.auth.signInWithPassword).toHaveBeenCalledWith({
@@ -126,19 +125,19 @@ describe('auth service', () => {
       error: { message: 'Invalid login credentials' },
     })
 
-    const result = await signIn('budi', '12345678')
+    const result = await signIn('budi@contoh.test', '12345678')
 
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors[0]?.message).toBe('Username atau password salah.')
+      expect(result.errors[0]?.message).toBe('Email atau password salah.')
     }
   })
 
-  it('memakai pesan umum untuk username atau password yang tidak valid', async () => {
-    const badUsername = await signIn('budi-01', '12345678')
-    const badPassword = await signIn('budi', '1234567')
+  it('memakai pesan umum untuk email atau password yang tidak valid', async () => {
+    const badEmail = await signIn('budi-01', '12345678')
+    const badPassword = await signIn('budi@contoh.test', '1234567')
 
-    expect(badUsername.ok).toBe(false)
+    expect(badEmail.ok).toBe(false)
     expect(badPassword.ok).toBe(false)
     expect(supabaseMock.auth.signInWithPassword).not.toHaveBeenCalled()
   })
@@ -203,5 +202,22 @@ describe('auth service', () => {
         'Password baru harus berbeda dari password saat ini.',
       )
     }
+  })
+
+  it('mengirim email reset password bila dikonfigurasi', async () => {
+    const result = await resetPasswordForEmail('budi@contoh.test')
+
+    expect(result.ok).toBe(true)
+    expect(supabaseMock.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+      'budi@contoh.test',
+      expect.objectContaining({ redirectTo: '/reset-password' }),
+    )
+  })
+
+  it('menolak email reset yang tidak valid', async () => {
+    const result = await resetPasswordForEmail('bukan-email')
+
+    expect(result.ok).toBe(false)
+    expect(supabaseMock.auth.resetPasswordForEmail).not.toHaveBeenCalled()
   })
 })

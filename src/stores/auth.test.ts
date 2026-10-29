@@ -79,7 +79,7 @@ beforeEach(() => {
 })
 
 describe('auth store', () => {
-  it('memuat sesi awal, username, dan berlangganan perubahan auth', async () => {
+  it('memuat sesi awal, email, dan berlangganan perubahan auth', async () => {
     supabaseMock.auth.getSession.mockResolvedValue({
       data: { session },
       error: null,
@@ -91,7 +91,6 @@ describe('auth store', () => {
     expect(store.session).toEqual(session)
     expect(store.isAuthenticated).toBe(true)
     expect(store.email).toBe('budi@contoh.test')
-    expect(store.username).toBe('budi')
     expect(store.loading).toBe(false)
     expect(supabaseMock.auth.onAuthStateChange).toHaveBeenCalledOnce()
   })
@@ -211,19 +210,6 @@ describe('auth store', () => {
 
     expect(await store.changePassword('salah', 'baru12345')).toBe(false)
     expect(store.error).toBe('Password saat ini salah.')
-  })
-
-  it('memakai bagian email sebagai username cadangan', async () => {
-    const store = useAuthStore()
-    store.session = {
-      ...session,
-      user: {
-        ...user,
-        user_metadata: {},
-      },
-    } as Session
-
-    expect(store.username).toBe('budi')
   })
 
   it('membersihkan sesi dan plan saat Supabase mengirim SIGNED_OUT', async () => {

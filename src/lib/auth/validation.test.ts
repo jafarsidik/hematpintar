@@ -1,26 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { passwordSchema, signUpSchema, usernameSchema } from './validation'
+import { emailSchema, passwordSchema, signUpSchema } from './validation'
 
-describe('validasi username', () => {
-  it('menerima huruf kecil, angka, dan underscore 3-20 karakter', () => {
-    expect(usernameSchema.safeParse('budi').success).toBe(true)
-    expect(usernameSchema.safeParse('budi_01').success).toBe(true)
-    expect(usernameSchema.safeParse('a'.repeat(20)).success).toBe(true)
+describe('validasi email', () => {
+  it('menerima email valid', () => {
+    expect(emailSchema.safeParse('budi@contoh.com').success).toBe(true)
+    expect(emailSchema.safeParse('  Budi_01@Contoh.COM  ').success).toBe(true)
+    if (emailSchema.safeParse('  Budi_01@Contoh.COM  ').success) {
+      expect(emailSchema.safeParse('  Budi_01@Contoh.COM  ').data).toBe(
+        'budi_01@contoh.com',
+      )
+    }
   })
 
-  it('menormalkan spasi dan huruf besar sebelum divalidasi', () => {
-    const result = usernameSchema.safeParse('  Budi_01  ')
-
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data).toBe('budi_01')
-  })
-
-  it('menolak username terlalu pendek, terlalu panjang, atau bersimbol', () => {
-    expect(usernameSchema.safeParse('ab').success).toBe(false)
-    expect(usernameSchema.safeParse('a'.repeat(21)).success).toBe(false)
-    expect(usernameSchema.safeParse('budi-01').success).toBe(false)
-    expect(usernameSchema.safeParse('budi 01').success).toBe(false)
-    expect(usernameSchema.safeParse('budi@01').success).toBe(false)
+  it('menolak email tidak valid', () => {
+    expect(emailSchema.safeParse('').success).toBe(false)
+    expect(emailSchema.safeParse('budi').success).toBe(false)
+    expect(emailSchema.safeParse('budi@').success).toBe(false)
+    expect(emailSchema.safeParse('@contoh.com').success).toBe(false)
+    expect(emailSchema.safeParse('budi contoh.com').success).toBe(false)
   })
 })
 
@@ -42,16 +39,35 @@ describe('validasi password', () => {
 })
 
 describe('validasi pendaftaran', () => {
-  it('memvalidasi username dan password sekaligus', () => {
+  it('memvalidasi email dan password sekaligus', () => {
     expect(
-      signUpSchema.safeParse({ username: 'Budi_01', password: '12345678' })
-        .success,
+      signUpSchema.safeParse({
+        email: 'Budi_01@Contoh.com',
+        password: '12345678',
+        confirmPassword: '12345678',
+      }).success,
     ).toBe(true)
     expect(
-      signUpSchema.safeParse({ username: 'ab', password: '12345678' }).success,
+      signUpSchema
+        .safeParse({ email: 'ab@contoh.com', password: '12345678' })
+        .success,
     ).toBe(false)
     expect(
-      signUpSchema.safeParse({ username: 'budi', password: '1234567' }).success,
+      signUpSchema
+        .safeParse({ email: 'budi@contoh.com', password: '1234567' })
+        .success,
+    ).toBe(false)
+  })
+
+  it('menolak konfirmasi password yang tidak cocok', () => {
+    expect(
+      signUpSchema
+        .safeParse({
+          email: 'budi@contoh.com',
+          password: '12345678',
+          confirmPassword: '123456789',
+        })
+        .success,
     ).toBe(false)
   })
 })

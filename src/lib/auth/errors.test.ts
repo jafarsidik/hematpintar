@@ -8,21 +8,17 @@ import {
 } from './errors'
 
 describe('pemetaan error autentikasi', () => {
-  it('memetakan username yang sudah dipakai', () => {
+  it('memetakan email yang sudah dipakai', () => {
     expect(mapSignUpError({ message: 'User already registered' })).toBe(
-      'Username sudah digunakan.',
+      'Email sudah terdaftar.',
     )
     expect(
-      mapSignUpError('duplicate key value violates unique constraint "profiles_username_key"'),
-    ).toBe('Username sudah digunakan.')
+      mapSignUpError(
+        'duplicate key value violates unique constraint "entitlements_email_key"',
+      ),
+    ).toBe('Email sudah terdaftar.')
     expect(mapSignUpError('Database error saving new user')).toBe(
-      'Username sudah digunakan.',
-    )
-  })
-
-  it('memetakan username tidak valid', () => {
-    expect(mapSignUpError('invalid_username')).toBe(
-      'Username hanya boleh huruf kecil, angka, dan underscore (3-20 karakter).',
+      'Email sudah terdaftar.',
     )
   })
 
@@ -41,7 +37,7 @@ describe('pemetaan error autentikasi', () => {
 
   it('selalu memakai pesan umum untuk login gagal', () => {
     expect(mapLoginError()).toBe(GENERIC_LOGIN_ERROR)
-    expect(mapLoginError()).toBe('Username atau password salah.')
+    expect(mapLoginError()).toBe('Email atau password salah.')
   })
 
   it('memetakan password saat ini yang salah dan password baru yang sama', () => {

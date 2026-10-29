@@ -4,14 +4,13 @@ import { zodValidationErrors } from '@/lib/storage/errors'
 import { isSupabaseConfigured, supabase } from '@/lib/supabase/client'
 import {
   AUTH_UNAVAILABLE_ERROR,
+  EMAIL_TAKEN_ERROR,
   GENERIC_LOGIN_ERROR,
-  USERNAME_TAKEN_ERROR,
   mapAuthError,
   mapChangePasswordError,
   mapSignUpError,
 } from './errors'
-import { normalizeUsername, usernameToEmail } from './username'
-import { USERNAME_PATTERN, passwordSchema, signUpSchema } from './validation'
+import { EMAIL_MESSAGE, emailSchema, passwordSchema, signUpSchema } from './validation'
 
 export interface SignUpResult {
   user: User
@@ -31,12 +30,13 @@ function unknownErrorMessage(error: unknown): string {
 }
 
 export async function signUp(
-  usernameInput: string,
+  emailInput: string,
   password: string,
 ): Promise<Result<SignUpResult>> {
   const parsed = signUpSchema.safeParse({
-    username: usernameInput,
+    email: emailInput,
     password,
+    confirmPassword: password,
   })
 
   if (!parsed.success) return fail(zodValidationErrors(parsed.error))
@@ -44,35 +44,35 @@ export async function signUp(
     return fail(authError(AUTH_UNAVAILABLE_ERROR))
   }
 
-  const { username } = parsed.data
+  const { email } = parsed.data
 
   try {
     const { data, error } = await supabase.auth.signUp({
-      email: usernameToEmail(username),
-      password: parsed.data.password,
-      options: { data: { username } },
+      email,
+      password,
     })
 
     if (error) {
-      return fail(authError(mapSignUpError(error), 'username'))
+      return fail(authError(mapSignUpError(error), 'email'))
     }
+
+    // Confirm email disabled -> Supabase returns a session immediately.
+    // Confirm email enabled -> no session, user must check their inbox.
     if (
       data.user &&
       Array.isArray(data.user.identities) &&
       data.user.identities.length === 0
     ) {
-      // Supabase may intentionally return a fake user for an existing email
-      // when email confirmation is enabled. Treat it as a taken username.
-      return fail(authError(USERNAME_TAKEN_ERROR, 'username'))
+      return fail(authError(EMAIL_TAKEN_ERROR, 'email'))
     }
     if (!data.user) {
-      return fail(authError('Pendaftaran gagal. Coba lagi.', 'username'))
+      return fail(authError('Pendaftaran gagal. Coba lagi.', 'email'))
     }
 
     return ok({ user: data.user, session: data.session })
   } catch (error) {
     return fail(
-      authError(mapSignUpError(unknownErrorMessage(error)), 'username'),
+      authError(mapSignUpError(unknownErrorMessage(error)), 'email'),
     )
   }
 }
@@ -83,21 +83,23 @@ export async function signUp(
  * only when Supabase itself is unavailable before the request.
  */
 export async function signIn(
-  usernameInput: string,
+  emailInput: string,
   password: string,
 ): Promise<Result<Session>> {
-  const username = normalizeUsername(usernameInput)
+  const parsed = emailSchema.safeParse(emailInput)
 
-  if (!USERNAME_PATTERN.test(username) || password.length < 8) {
+  if (!parsed.success || password.length < 8) {
     return fail(authError(GENERIC_LOGIN_ERROR))
   }
   if (!supabase || !isSupabaseConfigured) {
     return fail(authError(AUTH_UNAVAILABLE_ERROR))
   }
 
+  const email = parsed.data
+
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(username),
+      email,
       password,
     })
 
@@ -187,6 +189,39 @@ export async function changePassword(
       authError(
         mapChangePasswordError(unknownErrorMessage(error)),
         'newPassword',
+      ),
+    )
+  }
+}
+
+export async function resetPasswordForEmail(
+  emailInput: string,
+): Promise<Result<void>> {
+  const parsed = emailSchema.safeParse(emailInput)
+
+  if (!parsed.success) return fail(authError(EMAIL_MESSAGE, 'email'))
+  if (!supabase || !isSupabaseConfigured) {
+    return fail(authError(AUTH_UNAVAILABLE_ERROR))
+  }
+
+  const email = parsed.data
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: '/reset-password',
+    })
+
+    if (error) {
+      const mapped = mapSignUpError(error)
+      return fail(authError(mapped, 'email'))
+    }
+
+    return ok(undefined)
+  } catch (error) {
+    return fail(
+      authError(
+        mapSignUpError(unknownErrorMessage(error)),
+        'email',
       ),
     )
   }

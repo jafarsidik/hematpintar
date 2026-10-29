@@ -272,7 +272,7 @@ async function confirmDeleteAll(): Promise<void> {
         <p class="mt-3 text-sm text-slate-600">
           Masuk sebagai
           <strong class="font-medium text-slate-900">
-            {{ authStore.username }}
+            {{ authStore.email }}
           </strong>
           dengan paket
           <strong class="font-medium text-slate-900">

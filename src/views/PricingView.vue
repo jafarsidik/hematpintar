@@ -56,7 +56,7 @@ function planFeatures(plan: PlanConfig): string[] {
 function whatsAppUrl(plan: Plan): string | null {
   return buildWhatsAppUrl(
     waNumber,
-    buildWhatsAppMessage(plan, authStore.username ?? ''),
+    buildWhatsAppMessage(plan, authStore.email ?? ''),
   )
 }
 

@@ -7,7 +7,7 @@ import { isSupabaseConfigured } from '@/lib/supabase/client'
 import { useAuthStore } from '@/stores/auth'
 import { useEntitlementStore } from '@/stores/entitlements'
 
-type AuthMode = 'login' | 'register'
+type AuthMode = 'login' | 'register' | 'reset'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,11 +18,18 @@ const mode = ref<AuthMode>('login')
 const username = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const resetPassword = ref('')
 const showPassword = ref(false)
 const localError = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 
+const enablePasswordReset = computed(
+  () =>
+    (import.meta.env.VITE_ENABLE_PASSWORD_RESET ?? '').toLowerCase() === 'true',
+)
+
 const isRegister = computed(() => mode.value === 'register')
+const isReset = computed(() => mode.value === 'reset')
 const passwordInputType = computed(() =>
   showPassword.value ? 'text' : 'password',
 )
@@ -32,6 +39,9 @@ const planTone = computed(() =>
 const formError = computed(() => localError.value ?? authStore.error)
 const canSubmit = computed(() => {
   if (authStore.submitting) return false
+  if (isReset.value) {
+    return resetPassword.value.trim() !== '' && password.value.length >= 8
+  }
   if (username.value.trim() === '' || password.value === '') return false
   if (isRegister.value && confirmPassword.value === '') return false
   return true
@@ -48,6 +58,7 @@ function switchMode(nextMode: AuthMode): void {
   mode.value = nextMode
   password.value = ''
   confirmPassword.value = ''
+  resetPassword.value = ''
   showPassword.value = false
   clearMessages()
 }
@@ -56,6 +67,16 @@ async function submit(): Promise<void> {
   if (!canSubmit.value) return
 
   clearMessages()
+
+  if (isReset.value) {
+    const success = await authStore.resetPasswordForEmail(username.value)
+    if (success) {
+      mode.value = 'login'
+      successMessage.value =
+        'Jika email terdaftar, kami telah mengirimkan instruksi reset password.'
+    }
+    return
+  }
 
   if (isRegister.value && password.value !== confirmPassword.value) {
     localError.value = 'Konfirmasi password baru tidak cocok.'
@@ -83,7 +104,7 @@ async function submit(): Promise<void> {
   confirmPassword.value = ''
   showPassword.value = false
   successMessage.value =
-    'Akun berhasil dibuat. Silakan masuk dengan username dan password.'
+    'Akun berhasil dibuat. Silakan masuk dengan email dan password.'
 }
 
 async function logout(): Promise<void> {
@@ -105,8 +126,8 @@ async function logout(): Promise<void> {
         Masuk atau daftar
       </h1>
       <p class="mt-2 text-sm leading-relaxed text-slate-600">
-        Login memakai username dan password. Tidak ada email, OTP, atau tautan
-        masuk. Kalkulator tetap berjalan tanpa akun dan tanpa internet.
+        Login memakai email dan password. Tidak ada OTP, atau tautan masuk.
+        Kalkulator tetap berjalan tanpa akun dan tanpa internet.
       </p>
     </header>
 
@@ -154,7 +175,7 @@ async function logout(): Promise<void> {
 
       <p class="mt-3 text-sm text-slate-600">
         Masuk sebagai
-        <strong class="font-medium text-slate-900">{{ authStore.username }}</strong>.
+        <strong class="font-medium text-slate-900">{{ authStore.email }}</strong>.
       </p>
       <p class="mt-1 text-sm text-slate-600">
         Paket efektif saat ini:
@@ -205,11 +226,11 @@ async function logout(): Promise<void> {
 
     <section v-else class="card p-5" aria-labelledby="judul-form-akun">
       <h2 id="judul-form-akun" class="text-base font-semibold text-slate-900">
-        {{ isRegister ? 'Buat akun' : 'Masuk ke akun' }}
+        {{ isRegister ? 'Buat akun' : isReset ? 'Lupa password' : 'Masuk ke akun' }}
       </h2>
 
       <div
-        class="mt-4 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1"
+        class="mt-4 flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1"
         role="tablist"
         aria-label="Pilih masuk atau daftar"
       >
@@ -241,6 +262,21 @@ async function logout(): Promise<void> {
         >
           Daftar
         </button>
+        <button
+          v-if="enablePasswordReset"
+          type="button"
+          role="tab"
+          :aria-selected="mode === 'reset'"
+          class="rounded-md px-3 py-2 text-sm font-medium transition"
+          :class="
+            mode === 'reset'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-800'
+          "
+          @click="switchMode('reset')"
+        >
+          Lupa password
+        </button>
       </div>
 
       <p class="mt-4 text-sm leading-relaxed text-slate-600">
@@ -248,32 +284,32 @@ async function logout(): Promise<void> {
           Buat akun untuk mencadangkan simulasi dan membaca status paket.
         </template>
         <template v-else>
-          Masukkan username dan password yang kamu daftarkan.
+          Masukkan email dan password yang kamu daftarkan.
         </template>
       </p>
 
       <form class="mt-4 space-y-4" @submit.prevent="submit">
         <div>
-          <label for="auth-username" class="label-base">
-            Username
+          <label for="auth-email" class="label-base">
+            Email
             <span class="text-error-600" aria-hidden="true">*</span>
           </label>
           <input
-            id="auth-username"
+            id="auth-email"
             v-model="username"
-            type="text"
+            type="email"
             class="input-base"
-            autocomplete="username"
+            autocomplete="email"
             autocapitalize="none"
             spellcheck="false"
-            placeholder="contoh: budi_01"
+            placeholder="contoh: budi@contoh.com"
             required
             :disabled="authStore.submitting"
             :aria-invalid="formError ? 'true' : undefined"
             @input="clearMessages"
           />
           <p class="mt-1 text-xs text-slate-500">
-            3-20 karakter: huruf kecil, angka, dan underscore.
+            Alamat email yang digunakan saat daftar.
           </p>
         </div>
 
@@ -350,17 +386,82 @@ async function logout(): Promise<void> {
           :disabled="!canSubmit"
         >
           <template v-if="authStore.submitting">
-            {{ isRegister ? 'Mendaftar...' : 'Masuk...' }}
+            {{ isRegister ? 'Mendaftar...' : isReset ? 'Mengirim...' : 'Masuk...' }}
           </template>
           <template v-else>
-            {{ isRegister ? 'Daftar' : 'Masuk' }}
+            {{ isRegister ? 'Daftar' : isReset ? 'Atur ulang password' : 'Masuk' }}
           </template>
         </button>
       </form>
 
+      <form
+        v-if="isReset"
+        class="mt-4 space-y-4"
+        @submit.prevent="submit"
+      >
+        <div>
+          <label for="auth-reset-email" class="label-base">
+            Email
+            <span class="text-error-600" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="auth-reset-email"
+            v-model="username"
+            type="email"
+            class="input-base"
+            autocomplete="email"
+            placeholder="contoh: budi@contoh.com"
+            required
+            :disabled="authStore.submitting"
+            :aria-invalid="formError ? 'true' : undefined"
+            @input="clearMessages"
+          />
+        </div>
+
+        <p
+          v-if="formError"
+          class="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700"
+          role="alert"
+        >
+          {{ formError }}
+        </p>
+
+        <p
+          v-if="successMessage"
+          class="rounded-lg border border-success-200 bg-success-50 p-3 text-sm text-success-700"
+          role="status"
+        >
+          {{ successMessage }}
+        </p>
+
+        <button
+          type="submit"
+          class="btn btn-primary w-full"
+          :disabled="!canSubmit"
+        >
+          <template v-if="authStore.submitting">
+            Mengirim...
+          </template>
+          <template v-else>
+            Atur ulang password
+          </template>
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-ghost w-full mt-2"
+          @click="switchMode('login')"
+        >
+          Kembali ke masuk
+        </button>
+      </form>
+
       <p class="mt-4 text-xs leading-relaxed text-slate-500">
-        Tidak ada pengiriman email, OTP, atau tautan login. Jika lupa password,
-        hubungi admin untuk reset.
+        Tidak ada OTP, atau tautan login. Jika lupa password,
+        <span v-if="enablePasswordReset" class="text-primary-700 cursor-pointer" @click="mode = 'reset'">
+          atur ulang password
+        </span>
+        <span v-else>hubungi admin untuk reset.</span>
       </p>
     </section>
 

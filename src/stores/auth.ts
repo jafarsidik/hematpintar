@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import type { Plan } from '@/config/plans'
 import {
   changePassword as changePasswordService,
+  resetPasswordForEmail as resetPasswordForEmailService,
   signIn as signInService,
   signOut as signOutService,
   signUp as signUpService,
@@ -34,21 +35,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   const user = computed(() => session.value?.user ?? null)
   const email = computed(() => user.value?.email ?? null)
-  const username = computed(() => {
-    const metadataUsername = user.value?.user_metadata?.username
-
-    if (
-      typeof metadataUsername === 'string' &&
-      metadataUsername.trim() !== ''
-    ) {
-      return metadataUsername.trim()
-    }
-
-    const address = email.value
-    if (!address) return null
-
-    return address.split('@')[0] ?? null
-  })
   const isAuthenticated = computed(() => user.value !== null)
 
   let unsubscribe: (() => void) | null = null
@@ -167,14 +153,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function signIn(
-    usernameInput: string,
+    emailInput: string,
     password: string,
   ): Promise<boolean> {
     error.value = null
     submitting.value = true
 
     try {
-      const result = await signInService(usernameInput, password)
+      const result = await signInService(emailInput, password)
 
       if (!result.ok) {
         error.value = errorMessage(result.errors)
@@ -190,14 +176,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function signUp(
-    usernameInput: string,
+    emailInput: string,
     password: string,
   ): Promise<boolean> {
     error.value = null
     submitting.value = true
 
     try {
-      const result = await signUpService(usernameInput, password)
+      const result = await signUpService(emailInput, password)
 
       if (!result.ok) {
         error.value = errorMessage(result.errors)
@@ -209,7 +195,10 @@ export const useAuthStore = defineStore('auth', () => {
       if (result.value.session?.user) {
         await refreshPlan()
       } else {
+        // Confirm email is enabled: no session yet, user must check inbox.
         applyFreePlan()
+        error.value =
+          'Pendaftaran berhasil. Cek email Anda untuk konfirmasi.'
       }
 
       return true
@@ -262,6 +251,28 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function resetPasswordForEmail(
+    emailInput: string,
+  ): Promise<boolean> {
+    error.value = null
+    submitting.value = true
+
+    try {
+      const result = await resetPasswordForEmailService(emailInput)
+
+      if (!result.ok) {
+        error.value = errorMessage(result.errors)
+        return false
+      }
+
+      error.value =
+        'Jika email terdaftar, kami telah mengirimkan instruksi reset password.'
+      return true
+    } finally {
+      submitting.value = false
+    }
+  }
+
   function clearError(): void {
     error.value = null
   }
@@ -275,7 +286,6 @@ export const useAuthStore = defineStore('auth', () => {
     session,
     user,
     email,
-    username,
     isAuthenticated,
     plan,
     validUntil,
@@ -290,6 +300,7 @@ export const useAuthStore = defineStore('auth', () => {
     signUp,
     signOut,
     changePassword,
+    resetPasswordForEmail,
     refreshPlan,
     clearError,
     dispose,
