@@ -1,1456 +1,1110 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { useHouseholdStore } from '@/stores/household'
+import { useToastStore } from '@/stores/toast'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import InputQty from '@/components/InputQty.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import InputRupiah from '@/components/InputRupiah.vue'
+import InputQty from '@/components/InputQty.vue'
 import InputSelectSatuan from '@/components/InputSelectSatuan.vue'
-import ResultCard from '@/components/ResultCard.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { formatPercent, formatRupiah } from '@/lib/calc/currency-format'
 import {
-  hargaPerSatuanStandarDetail,
-  penghematan,
-  persenAnggaranTerpakai,
-  sisaAnggaran,
-  statusAnggaran,
-  totalBelanja,
-  type HargaSatuanStandarDetail,
-  type StatusAnggaran,
+  hargaEfektifProduk,
+  hargaPerSatuanProduk,
+  satuanStandar,
+  selisihHematDariTermurah,
+  statusKesegaranHarga,
 } from '@/lib/calc/household'
-import type { Result } from '@/lib/calc/result'
-import type { Satuan } from '@/lib/calc/unit-conversion'
+import { dimensiSatuan } from '@/lib/calc/unit-conversion'
+import { normalizeLinkSource } from '@/lib/links/normalize-url'
 import { fileDateStamp } from '@/lib/format-date'
-import { simulationsToCsv } from '@/lib/storage/csv'
 import { downloadCsv } from '@/lib/storage/download'
-import { errorMessage } from '@/lib/storage/errors'
-import { getSimulationById } from '@/lib/storage/repository'
-import {
-  SCHEMA_VERSION,
-  householdPayloadSchema,
-  type HouseholdPayload,
-  type SimulationRecord,
-} from '@/lib/storage/schemas'
-import { useSimulationFeedback } from '@/composables/useSimulationFeedback'
-import { useSimulationStore } from '@/stores/simulations'
-import { useToastStore } from '@/stores/toast'
+import type { SavedProduct } from '@/lib/storage/household-needs'
 
-interface ItemForm {
-  rowId: string
-  nama: string
-  kuantitas: number | null
-  satuan: Satuan
-  harga: number | null
-}
-
-interface UnitCheckForm {
-  nama: string
-  hargaKemasan: number | null
-  isiKemasan: number | null
-  satuan: Satuan
-}
-
-interface HouseholdForm {
-  budget: number | null
-  items: ItemForm[]
-  baselineItems: ItemForm[]
-  alternativeItems: ItemForm[]
-  notes: string
-  unitPriceCheck: UnitCheckForm
-}
-
-interface FormIssue {
-  field: string
-  message: string
-}
-
-type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral'
-
-interface StatusView {
-  tone: BadgeTone
-  label: string
-  description: string
-}
-
-type ListTab = 'items' | 'baseline' | 'alternative'
-type ListKey = 'items' | 'baselineItems' | 'alternativeItems'
-
-interface ListConfig {
-  key: ListKey
-  title: string
-  description: string
-  itemLabel: string
-  addLabel: string
-}
-
-const LIST_CONFIG: Record<ListTab, ListConfig> = {
-  items: {
-    key: 'items',
-    title: 'Daftar belanja utama',
-    description:
-      'Masukkan nama barang, kuantitas, satuan, dan harga per satuan yang akan dibeli.',
-    itemLabel: 'Barang',
-    addLabel: 'Tambah barang',
-  },
-  baseline: {
-    key: 'baselineItems',
-    title: 'Daftar baseline',
-    description:
-      'Harga atau pilihan belanja yang biasa dipakai sebagai pembanding. Daftar ini opsional.',
-    itemLabel: 'Barang baseline',
-    addLabel: 'Tambah barang baseline',
-  },
-  alternative: {
-    key: 'alternativeItems',
-    title: 'Daftar alternatif',
-    description:
-      'Harga atau pilihan belanja alternatif yang ingin dibandingkan dengan baseline. Daftar ini opsional.',
-    itemLabel: 'Barang alternatif',
-    addLabel: 'Tambah barang alternatif',
-  },
-}
-
-const TABS: readonly { id: ListTab; label: string }[] = [
-  { id: 'items', label: 'Daftar belanja' },
-  { id: 'baseline', label: 'Baseline' },
-  { id: 'alternative', label: 'Alternatif' },
-]
-
-const route = useRoute()
-const router = useRouter()
-const simulationStore = useSimulationStore()
+const authStore = useAuthStore()
+const store = useHouseholdStore()
 const toastStore = useToastStore()
-const { reportSaveError } = useSimulationFeedback()
 
-const currentSimulationId = ref<string | null>(null)
-const loadingSaved = ref(false)
-const saving = ref(false)
-const showIssues = ref(false)
-const resetOpen = ref(false)
-const formElement = ref<HTMLFormElement | null>(null)
-const activeList = ref<ListTab>('items')
-
-function newItem(
-  nama = '',
-  kuantitas: number | null = null,
-  satuan: Satuan = 'pcs',
-  harga: number | null = null,
-): ItemForm {
-  return {
-    rowId: crypto.randomUUID(),
-    nama,
-    kuantitas,
-    satuan,
-    harga,
-  }
+interface EditingProduct extends SavedProduct {
+  editing: boolean
+  editedUrl: string
+  editedTitle: string
+  editedStoreName: string | null
+  editedPrice: number | null
+  editedPackSize: number | null
+  editedPackUnit: 'g' | 'kg' | 'ml' | 'l' | 'pcs'
+  editedShippingCost: number | null
+  editedVoucherDiscount: number | null
+  editedNote: string | null
+  editedPriceCheckedAt: string | null
+  urlError: string | null
 }
 
-function newUnitCheck(): UnitCheckForm {
-  return {
-    nama: '',
-    hargaKemasan: null,
-    isiKemasan: null,
-    satuan: 'kg',
-  }
+interface ProductWithCalculation extends SavedProduct {
+  hargaEfektif: number | null
+  hargaPerSatuan: number | null
+  satuanStandar: 'kg' | 'l' | 'pcs' | null
+  seri: boolean
+  termurah: boolean
+  segar: boolean
+  satuanTidakSebanding: boolean
+  selisihDariTermurah: number | null
 }
 
-function blankForm(): HouseholdForm {
-  return {
-    budget: null,
-    items: [newItem()],
-    baselineItems: [],
-    alternativeItems: [],
-    notes: '',
-    unitPriceCheck: newUnitCheck(),
-  }
+const needs = computed(() => store.needs)
+const productsMap = computed(() => store.productsByNeed)
+const budget = computed(() => store.budget)
+const error = computed(() => store.error)
+
+const needsLoading = ref(false)
+const productsLoading = ref(false)
+const showAddNeed = ref(false)
+const showAddProduct = ref<string | null>(null)
+const needName = ref('')
+const needTargetQty = ref<number | null>(null)
+const needUnit = ref<'g' | 'kg' | 'ml' | 'l' | 'pcs' | undefined>(undefined)
+const deleteOpen = ref<{
+  id: string
+  name: string
+  needId?: string
+  isProduct?: boolean
+} | null>(null)
+const activeNeedId = ref<string | null>(null)
+
+interface NewProductForm {
+  title: string
+  platform: string
+  storeName: string | null
+  url: string
+  urlError: string | null
+  price: number | null
+  packSize: number | null
+  packUnit: 'g' | 'kg' | 'ml' | 'l' | 'pcs'
+  shippingCost: number | null
+  voucherDiscount: number | null
+  note: string | null
+  priceCheckedAt: string | null
 }
 
-const form = reactive<HouseholdForm>(blankForm())
-
-function isRowActive(row: ItemForm): boolean {
-  return (
-    row.nama.trim() !== '' || row.kuantitas !== null || row.harga !== null
-  )
-}
-
-function activeRowsFor(key: ListKey): ItemForm[] {
-  return form[key].filter(isRowActive)
-}
-
-const activeConfig = computed(() => LIST_CONFIG[activeList.value])
-const activeRows = computed(() => form[activeConfig.value.key])
-
-const mainActive = computed(() => activeRowsFor('items'))
-const baselineActive = computed(() => activeRowsFor('baselineItems'))
-const alternativeActive = computed(() => activeRowsFor('alternativeItems'))
-
-function calculationItems(rows: readonly ItemForm[]) {
-  return rows.map((row) => ({
-    jumlah: row.kuantitas ?? Number.NaN,
-    hargaSatuan: row.harga ?? Number.NaN,
-  }))
-}
-
-const totalResult = computed(() => totalBelanja(calculationItems(mainActive.value)))
-const baselineResult = computed(() =>
-  totalBelanja(calculationItems(baselineActive.value)),
-)
-const alternativeResult = computed(() =>
-  totalBelanja(calculationItems(alternativeActive.value)),
-)
-
-const total = computed(() =>
-  totalResult.value.ok ? totalResult.value.value : null,
-)
-const baselineTotal = computed(() =>
-  baselineActive.value.length === 0
-    ? null
-    : baselineResult.value.ok
-      ? baselineResult.value.value
-      : null,
-)
-const alternativeTotal = computed(() =>
-  alternativeActive.value.length === 0
-    ? null
-    : alternativeResult.value.ok
-      ? alternativeResult.value.value
-      : null,
-)
-
-const sisaResult = computed(() => {
-  if (form.budget === null || total.value === null) return null
-  return sisaAnggaran(form.budget, total.value)
+const newProduct = reactive<NewProductForm>({
+  title: '',
+  platform: '',
+  storeName: null,
+  url: '',
+  urlError: null,
+  price: null,
+  packSize: null,
+  packUnit: 'kg',
+  shippingCost: null,
+  voucherDiscount: null,
+  note: null,
+  priceCheckedAt: '',
 })
 
-const persenResult = computed(() => {
-  if (form.budget === null || total.value === null) return null
-  return persenAnggaranTerpakai(form.budget, total.value)
-})
-
-const statusResult = computed(() => {
-  if (form.budget === null || total.value === null) return null
-  return statusAnggaran(form.budget, total.value)
-})
-
-const savingsResult = computed(() => {
-  if (baselineTotal.value === null || alternativeTotal.value === null) {
-    return null
-  }
-  return penghematan(baselineTotal.value, alternativeTotal.value)
-})
-
-const unitCheckActive = computed(
-  () =>
-    form.unitPriceCheck.nama.trim() !== '' ||
-    form.unitPriceCheck.hargaKemasan !== null ||
-    form.unitPriceCheck.isiKemasan !== null,
-)
-
-const unitCheckComplete = computed(
-  () =>
-    form.unitPriceCheck.hargaKemasan !== null &&
-    form.unitPriceCheck.isiKemasan !== null,
-)
-
-const unitCheckResult = computed(() => {
-  if (
-    !unitCheckActive.value ||
-    !unitCheckComplete.value ||
-    form.unitPriceCheck.hargaKemasan === null ||
-    form.unitPriceCheck.isiKemasan === null
-  ) {
-    return null
-  }
-
-  return hargaPerSatuanStandarDetail(
-    form.unitPriceCheck.hargaKemasan,
-    form.unitPriceCheck.isiKemasan,
-    form.unitPriceCheck.satuan,
-  )
-})
-
-const sisa = computed(() =>
-  sisaResult.value?.ok ? sisaResult.value.value : null,
-)
-const persen = computed(() =>
-  persenResult.value?.ok ? persenResult.value.value : null,
-)
-const status = computed<StatusAnggaran | null>(() =>
-  statusResult.value?.ok ? statusResult.value.value : null,
-)
-const savings = computed(() =>
-  savingsResult.value?.ok ? savingsResult.value.value : null,
-)
-const unitCheck = computed<HargaSatuanStandarDetail | null>(() =>
-  unitCheckResult.value?.ok ? unitCheckResult.value.value : null,
-)
-
-function activeCount(tab: ListTab): number {
-  return activeRowsFor(LIST_CONFIG[tab].key).length
-}
-
-const statusView = computed<StatusView>(() => {
-  if (
-    form.budget === null ||
-    total.value === null ||
-    status.value === null
-  ) {
-    return {
-      tone: 'neutral',
-      label: 'Belum dinilai',
-      description:
-        'Isi anggaran dan minimal satu barang untuk melihat status belanja.',
-    }
-  }
-
-  const sisaValue = sisa.value ?? 0
-  const persenValue = persen.value
-
-  if (status.value === 'melebihi_anggaran') {
-    return {
-      tone: 'danger',
-      label: 'Melebihi anggaran',
-      description: `Total belanja ${formatRupiah(total.value)} melebihi anggaran ${formatRupiah(form.budget)} sebesar ${formatRupiah(Math.abs(sisaValue))}.`,
-    }
-  }
-
-  if (status.value === 'mendekati_batas') {
-    const pemakaian =
-      persenValue === null ? '' : ` (${formatPercent(persenValue)} terpakai)`
-    return {
-      tone: 'warning',
-      label: 'Mendekati batas',
-      description: `Sisa anggaran ${formatRupiah(sisaValue)}${pemakaian}. Pertimbangkan menunda atau mengurangi pembelian yang tidak mendesak.`,
-    }
-  }
-
-  return {
-    tone: 'success',
-    label: 'Dalam anggaran',
-    description: `Total belanja ${formatRupiah(total.value)} masih menyisakan ${formatRupiah(sisaValue)} dari anggaran ${formatRupiah(form.budget)}.`,
-  }
-})
-
-const rekomendasi = computed<string[]>(() => {
-  const recommendations: string[] = []
-
-  if (form.budget === null) {
-    recommendations.push(
-      'Isi anggaran belanja agar sisa dan persentase pemakaian dapat dihitung.',
-    )
-  }
-
-  if (mainActive.value.length === 0) {
-    recommendations.push(
-      'Tambahkan minimal satu barang pada daftar belanja utama.',
-    )
-  }
-
-  if (
-    mainActive.value.length > 0 &&
-    (baselineActive.value.length === 0 || alternativeActive.value.length === 0)
-  ) {
-    recommendations.push(
-      'Isi daftar baseline dan alternatif untuk menghitung penghematan dari perbandingan harga.',
-    )
-  }
-
-  if (status.value === 'melebihi_anggaran' && sisa.value !== null) {
-    recommendations.push(
-      `Kurangi belanja sebesar ${formatRupiah(Math.abs(sisa.value))} atau tambah anggaran agar total kembali sesuai batas.`,
-    )
-  } else if (status.value === 'mendekati_batas' && sisa.value !== null) {
-    recommendations.push(
-      `Sisa anggaran hanya ${formatRupiah(sisa.value)}. Dahulukan kebutuhan pokok dan tunda pembelian yang tidak mendesak.`,
-    )
-  } else if (status.value === 'dalam_anggaran' && sisa.value !== null) {
-    recommendations.push(
-      `Belanja masih dalam anggaran dengan sisa ${formatRupiah(sisa.value)}.`,
-    )
-  }
-
-  if (
-    form.budget === 0 &&
-    total.value !== null &&
-    persen.value === null
-  ) {
-    recommendations.push(
-      'Anggaran Rp0 membuat persentase anggaran terpakai tidak tersedia; isi anggaran jika ingin memantau proporsi belanja.',
-    )
-  }
-
-  if (savings.value !== null) {
-    if (savings.value > 0) {
-      recommendations.push(
-        `Alternatif lebih murah ${formatRupiah(savings.value)} dibanding baseline, dengan catatan kualitas, kuantitas, dan satuannya sebanding.`,
-      )
-    } else if (savings.value < 0) {
-      recommendations.push(
-        `Alternatif lebih mahal ${formatRupiah(Math.abs(savings.value))} dibanding baseline. Periksa kembali apakah selisihnya sepadan dengan kualitas yang didapat.`,
-      )
-    } else {
-      recommendations.push(
-        'Total baseline dan alternatif sama. Tidak ada penghematan nominal dari perbandingan ini.',
-      )
-    }
-  }
-
-  if (unitCheck.value) {
-    recommendations.push(
-      `Harga kemasan setara ${formatRupiah(unitCheck.value.harga)} per ${unitCheck.value.satuan}. Gunakan angka ini hanya untuk membandingkan kemasan dengan satuan yang sejenis.`,
-    )
-  }
-
-  if (
-    baselineActive.value.length > 0 &&
-    alternativeActive.value.length > 0
-  ) {
-    recommendations.push(
-      'Penghematan hanya sah jika kualitas, kuantitas, satuan, dan kebutuhan yang dibandingkan sama. Jangan membandingkan gram dengan mililiter tanpa informasi densitas.',
-    )
-  }
-
-  return recommendations
-})
-
-const formIssues = computed<FormIssue[]>(() => {
-  const issues: FormIssue[] = []
-
-  if (
-    form.budget === null ||
-    !Number.isFinite(form.budget) ||
-    form.budget < 0 ||
-    !Number.isInteger(form.budget)
-  ) {
-    issues.push({
-      field: 'budget',
-      message: 'Anggaran belanja wajib diisi dalam Rupiah bulat.',
-    })
-  }
-
-  if (mainActive.value.length === 0) {
-    issues.push({
-      field: 'items',
-      message: 'Tambahkan minimal satu barang pada daftar belanja utama.',
-    })
-  }
-
-  const lists: { key: ListKey; label: string }[] = [
-    { key: 'items', label: 'Daftar belanja utama' },
-    { key: 'baselineItems', label: 'Daftar baseline' },
-    { key: 'alternativeItems', label: 'Daftar alternatif' },
-  ]
-
-  lists.forEach((list) => {
-    activeRowsFor(list.key).forEach((row) => {
-      if (row.nama.trim() === '') {
-        issues.push({
-          field: `${list.key}.${row.rowId}.nama`,
-          message: `Nama barang pada ${list.label.toLowerCase()} wajib diisi.`,
-        })
-      }
-      if (
-        row.kuantitas === null ||
-        !Number.isFinite(row.kuantitas) ||
-        row.kuantitas <= 0
-      ) {
-        issues.push({
-          field: `${list.key}.${row.rowId}.kuantitas`,
-          message: `Kuantitas pada ${list.label.toLowerCase()} harus lebih besar dari 0.`,
-        })
-      }
-      if (
-        row.harga === null ||
-        !Number.isFinite(row.harga) ||
-        row.harga < 0 ||
-        !Number.isInteger(row.harga)
-      ) {
-        issues.push({
-          field: `${list.key}.${row.rowId}.harga`,
-          message: `Harga per satuan pada ${list.label.toLowerCase()} wajib diisi dalam Rupiah bulat.`,
-        })
-      }
-    })
-  })
-
-  if (unitCheckActive.value) {
-    if (!unitCheckComplete.value) {
-      issues.push({
-        field: 'unitPriceCheck',
-        message:
-          'Lengkapi harga kemasan dan isi kemasan, atau kosongkan cek harga satuan.',
-      })
-    }
-    if (
-      form.unitPriceCheck.hargaKemasan !== null &&
-      (!Number.isFinite(form.unitPriceCheck.hargaKemasan) ||
-        form.unitPriceCheck.hargaKemasan < 0 ||
-        !Number.isInteger(form.unitPriceCheck.hargaKemasan))
-    ) {
-      issues.push({
-        field: 'unitPriceCheck.hargaKemasan',
-        message: 'Harga kemasan wajib diisi dalam Rupiah bulat.',
-      })
-    }
-    if (
-      form.unitPriceCheck.isiKemasan !== null &&
-      (!Number.isFinite(form.unitPriceCheck.isiKemasan) ||
-        form.unitPriceCheck.isiKemasan <= 0)
-    ) {
-      issues.push({
-        field: 'unitPriceCheck.isiKemasan',
-        message: 'Isi kemasan harus lebih besar dari 0.',
-      })
-    }
-  }
-
-  return issues
-})
-
-const calculationErrors = computed(() => {
-  const results: (Result<unknown> | null)[] = [
-    totalResult.value,
-    baselineResult.value,
-    alternativeResult.value,
-    sisaResult.value,
-    persenResult.value,
-    statusResult.value,
-    savingsResult.value,
-    unitCheckResult.value,
-  ]
-
-  const messages = new Set<string>()
-  results.forEach((result) => {
-    if (result && !result.ok) {
-      result.errors.forEach((error) => messages.add(error.message))
-    }
-  })
-  return [...messages]
-})
-
-function issueFor(field: string): string | null {
-  if (!showIssues.value) return null
-  return formIssues.value.find((issue) => issue.field === field)?.message ?? null
-}
-
-function hasVisibleInputError(): boolean {
-  return formElement.value?.querySelector('[aria-invalid="true"]') !== null
-}
-
-function specificRowIssue(
-  rowId: string,
-  field: 'nama' | 'kuantitas' | 'harga',
-): string | null {
-  return issueFor(`${activeConfig.value.key}.${rowId}.${field}`)
-}
-
-function numberFormat(value: number): string {
-  return new Intl.NumberFormat('id-ID', {
-    maximumFractionDigits: 4,
-  }).format(value)
-}
-
-function rupiahOr(value: number | null): string {
-  return value === null ? '—' : formatRupiah(value)
-}
-
-function persenOr(value: number | null): string {
-  return value === null ? 'Tidak tersedia' : formatPercent(value)
-}
-
-function addRow(): void {
-  form[activeConfig.value.key].push(newItem())
-}
-
-function removeRow(index: number): void {
-  form[activeConfig.value.key].splice(index, 1)
-}
-
-function isiContoh(): void {
-  const contohItems = [
-    newItem('Beras', 5, 'kg', 12_000),
-    newItem('Minyak', 2, 'l', 17_000),
-    newItem('Telur', 1, 'kg', 30_000),
-    newItem('Sabun', 2, 'pcs', 5_000),
-  ]
-
-  Object.assign(form, {
-    budget: 200_000,
-    items: contohItems,
-    baselineItems: [
-      newItem('Beras', 5, 'kg', 13_000),
-      newItem('Minyak', 2, 'l', 18_000),
-      newItem('Telur', 1, 'kg', 32_000),
-      newItem('Sabun', 2, 'pcs', 5_000),
-    ],
-    alternativeItems: contohItems.map((item) =>
-      newItem(item.nama, item.kuantitas, item.satuan, item.harga),
-    ),
-    notes: 'Contoh belanja mingguan rumah tangga.',
-    unitPriceCheck: {
-      nama: 'Beras kemasan',
-      hargaKemasan: 18_000,
-      isiKemasan: 750,
-      satuan: 'g',
-    },
-  })
-
-  activeList.value = 'items'
-  currentSimulationId.value = null
-  showIssues.value = false
-  if (route.query.simulation) {
-    void router.replace({ path: route.path, query: {} })
-  }
-}
-
-function applyPayload(payload: HouseholdPayload): void {
-  Object.assign(form, {
-    budget: payload.budget,
-    items:
-      payload.items.length > 0
-        ? payload.items.map((item) =>
-            newItem(item.nama, item.kuantitas, item.satuan, item.harga),
-          )
-        : [newItem()],
-    baselineItems: payload.baselineItems.map((item) =>
-      newItem(item.nama, item.kuantitas, item.satuan, item.harga),
-    ),
-    alternativeItems: payload.alternativeItems.map((item) =>
-      newItem(item.nama, item.kuantitas, item.satuan, item.harga),
-    ),
-    notes: payload.notes,
-    unitPriceCheck: payload.unitPriceCheck
-      ? {
-          nama: payload.unitPriceCheck.nama ?? '',
-          hargaKemasan: payload.unitPriceCheck.hargaKemasan,
-          isiKemasan: payload.unitPriceCheck.isiKemasan,
-          satuan: payload.unitPriceCheck.satuan,
-        }
-      : newUnitCheck(),
-  })
-
-  activeList.value = 'items'
-}
-
-async function loadSimulation(id: string): Promise<void> {
-  loadingSaved.value = true
-  const result = await getSimulationById(id)
-  loadingSaved.value = false
-
-  if (!result.ok) {
-    toastStore.error(errorMessage(result.errors))
-    return
-  }
-
-  if (!result.value) {
-    toastStore.error('Simulasi tidak ditemukan. Membuka form baru.')
-    currentSimulationId.value = null
-    await router.replace({ path: route.path, query: {} })
-    return
-  }
-
-  if (result.value.moduleType !== 'household') {
-    toastStore.error('Simulasi ini bukan simulasi Hemat Rumah Tangga.')
-    return
-  }
-
-  const parsed = householdPayloadSchema.safeParse(result.value.payload)
-  if (!parsed.success) {
-    toastStore.error(
-      parsed.error.issues[0]?.message ??
-        'Data simulasi tidak valid dan tidak dapat dibuka.',
-    )
-    return
-  }
-
-  applyPayload(parsed.data)
-  currentSimulationId.value = id
-  showIssues.value = false
-}
+const editingProduct = ref<EditingProduct | null>(null)
+const budgetInput = ref<number | null>(null)
 
 watch(
-  () => route.query.simulation,
-  (value) => {
-    const id = Array.isArray(value) ? value[0] : value
-    if (typeof id !== 'string' || id.length === 0) return
-    if (id === currentSimulationId.value) return
-    void loadSimulation(id)
+  () => budget.value,
+  (val) => {
+    budgetInput.value = val?.monthly_budget ?? null
   },
   { immediate: true },
 )
 
-function buildPayload(): HouseholdPayload | null {
-  if (
-    form.budget === null ||
-    !Number.isFinite(form.budget) ||
-    form.budget < 0 ||
-    !Number.isInteger(form.budget)
-  ) {
-    return null
+function productsFor(needId: string): SavedProduct[] {
+  return productsMap.value[needId] ?? []
+}
+
+function selectedProductId(needId: string): string | null {
+  const need = needs.value.find((n) => n.id === needId)
+  return need ? need.chosen_product_id : null
+}
+
+function formatDateInput(value: string | null): string {
+  if (!value) return ''
+  return value.slice(0, 16)
+}
+
+function newEditingProduct(product: SavedProduct): EditingProduct {
+  return {
+    ...product,
+    editing: true,
+    editedUrl: product.url,
+    editedTitle: product.title,
+    editedStoreName: product.store_name,
+    editedPrice: product.price,
+    editedPackSize: product.pack_size,
+    editedPackUnit: product.pack_unit as
+      | 'g' | 'kg' | 'ml' | 'l' | 'pcs',
+    editedShippingCost: product.shipping_cost,
+    editedVoucherDiscount: product.voucher_discount,
+    editedNote: product.note,
+    editedPriceCheckedAt: formatDateInput(product.price_checked_at),
+    urlError: null,
   }
+}
 
-  if (mainActive.value.length === 0) return null
-
-  const items = mainActive.value.map((row) => ({
-    nama: row.nama.trim(),
-    kuantitas: row.kuantitas ?? 0,
-    satuan: row.satuan,
-    harga: row.harga ?? 0,
-  }))
-
-  const baselineItems = baselineActive.value.map((row) => ({
-    nama: row.nama.trim(),
-    kuantitas: row.kuantitas ?? 0,
-    satuan: row.satuan,
-    harga: row.harga ?? 0,
-  }))
-
-  const alternativeItems = alternativeActive.value.map((row) => ({
-    nama: row.nama.trim(),
-    kuantitas: row.kuantitas ?? 0,
-    satuan: row.satuan,
-    harga: row.harga ?? 0,
-  }))
-
-  const payload: HouseholdPayload = {
-    budget: form.budget,
-    items,
-    baselineItems,
-    alternativeItems,
-    notes: form.notes,
+async function loadData(): Promise<void> {
+  needsLoading.value = true
+  try {
+    await store.fetchNeeds()
+    await store.fetchBudget()
+    for (const need of needs.value) {
+      await store.fetchProducts(need.id)
+    }
+  } catch {
+    toastStore.error('Gagal memuat data kebutuhan rumah tangga.')
+  } finally {
+    needsLoading.value = false
   }
+}
 
-  if (
-    unitCheckComplete.value &&
-    form.unitPriceCheck.hargaKemasan !== null &&
-    form.unitPriceCheck.isiKemasan !== null
-  ) {
-    const nama = form.unitPriceCheck.nama.trim()
-    payload.unitPriceCheck = {
-      ...(nama !== '' ? { nama } : {}),
-      hargaKemasan: form.unitPriceCheck.hargaKemasan,
-      isiKemasan: form.unitPriceCheck.isiKemasan,
-      satuan: form.unitPriceCheck.satuan,
+watch(
+  () => authStore.isAuthenticated,
+  (authenticated) => {
+    if (authenticated) void loadData()
+  },
+  { immediate: true },
+)
+
+function productCalculation(
+  product: SavedProduct,
+  allProductsOfNeed: SavedProduct[],
+): ProductWithCalculation {
+  const efektif = hargaEfektifProduk({
+    harga: product.price,
+    ongkir: product.shipping_cost,
+    voucher: product.voucher_discount,
+  })
+  const hargaEfektif = efektif.ok ? efektif.value : null
+
+  let hargaPerSatuan: number | null = null
+  let standarSatuan: 'kg' | 'l' | 'pcs' | null = null
+
+  if (hargaEfektif !== null) {
+    const ps = hargaPerSatuanProduk({
+      hargaEfektif,
+      isi: product.pack_size,
+      satuan: product.pack_unit as 'g' | 'kg' | 'ml' | 'l' | 'pcs',
+    })
+    if (ps.ok) {
+      hargaPerSatuan = ps.value
+      standarSatuan = satuanStandar(
+        product.pack_unit as 'g' | 'kg' | 'ml' | 'l' | 'pcs',
+      )
     }
   }
 
-  return payload
-}
-
-function simulationName(payload: HouseholdPayload): string {
-  const notes = payload.notes.trim()
-  const firstItem = payload.items[0]?.nama
-  const fallback =
-    firstItem === undefined
-      ? 'Belanja rumah tangga'
-      : `Belanja ${firstItem}`
-  return (notes !== '' ? notes : fallback).slice(0, 120)
-}
-
-function hasBlockingErrors(): boolean {
-  return (
-    formIssues.value.length > 0 ||
-    calculationErrors.value.length > 0 ||
-    hasVisibleInputError()
-  )
-}
-
-async function save(): Promise<void> {
-  showIssues.value = true
-  if (hasBlockingErrors()) {
-    toastStore.error('Periksa input yang ditandai sebelum menyimpan.')
-    return
-  }
-
-  const payload = buildPayload()
-  if (!payload) {
-    toastStore.error('Data belum lengkap untuk disimpan.')
-    return
-  }
-
-  const wasEditing = currentSimulationId.value !== null
-  saving.value = true
-
-  const result = wasEditing
-    ? await simulationStore.update(currentSimulationId.value!, {
-        name: simulationName(payload),
-        payload,
+  const productsWithPrice = allProductsOfNeed
+    .map((p) => {
+      const e = hargaEfektifProduk({
+        harga: p.price,
+        ongkir: p.shipping_cost,
+        voucher: p.voucher_discount,
       })
-    : await simulationStore.create({
-        moduleType: 'household',
-        name: simulationName(payload),
-        payload,
+      return e.ok ? e.value : null
+    })
+    .filter((v): v is number => v !== null)
+
+  const termurah =
+    hargaEfektif !== null &&
+    productsWithPrice.length > 0 &&
+    hargaEfektif === Math.min(...productsWithPrice)
+
+  const checkedAt = product.price_checked_at
+    ? product.price_checked_at
+    : null
+  const segar =
+    checkedAt !== null &&
+    statusKesegaranHarga(checkedAt, new Date().toISOString()) === 'segar'
+
+  const satuanTidakSebanding =
+    allProductsOfNeed.some(
+      (p) =>
+        dimensiSatuan(p.pack_unit as 'g' | 'kg' | 'ml' | 'l' | 'pcs') !==
+        dimensiSatuan(product.pack_unit as 'g' | 'kg' | 'ml' | 'l' | 'pcs'),
+    ) && allProductsOfNeed.length > 1
+
+  let selisihDariTermurah: number | null = null
+  if (hargaEfektif !== null && !termurah && productsWithPrice.length > 0) {
+    const minPrice = Math.min(...productsWithPrice)
+    const termurahProduk = allProductsOfNeed.find((p) => {
+      const e = hargaEfektifProduk({
+        harga: p.price,
+        ongkir: p.shipping_cost,
+        voucher: p.voucher_discount,
       })
+      return e.ok && e.value === minPrice
+    })
+    if (termurahProduk) {
+      const selisih = selisihHematDariTermurah(
+        {
+          harga: product.price,
+          ongkir: product.shipping_cost,
+          voucher: product.voucher_discount,
+        },
+        {
+          harga: termurahProduk.price,
+          ongkir: termurahProduk.shipping_cost,
+          voucher: termurahProduk.voucher_discount,
+        },
+      )
+      if (selisih.ok) selisihDariTermurah = selisih.value
+    }
+  }
 
-  saving.value = false
+  return {
+    ...product,
+    hargaEfektif,
+    hargaPerSatuan,
+    satuanStandar: standarSatuan,
+    seri: false,
+    termurah,
+    segar,
+    satuanTidakSebanding,
+    selisihDariTermurah,
+  }
+}
 
-  if (!result.ok) {
-    reportSaveError(result, 'household')
+function rankedProducts(needId: string): ProductWithCalculation[] {
+  const all = productsFor(needId)
+  return all.map((product) => productCalculation(product, all))
+}
+
+function selectedTotal(): number {
+  let total = 0
+  for (const need of needs.value) {
+    if (!need.chosen_product_id) continue
+    const product = productsFor(need.id).find((p) => p.id === need.chosen_product_id)
+    if (!product) continue
+    const efektif = hargaEfektifProduk({
+      harga: product.price,
+      ongkir: product.shipping_cost,
+      voucher: product.voucher_discount,
+    })
+    if (efektif.ok) total += efektif.value
+  }
+  return total
+}
+
+function maxNonSelectedEffectif(needId: string): number | null {
+  const all = productsFor(needId)
+  const chosen = selectedProductId(needId)
+  const values = all
+    .filter((p) => p.id !== chosen)
+    .map((p) => {
+      const e = hargaEfektifProduk({
+        harga: p.price,
+        ongkir: p.shipping_cost,
+        voucher: p.voucher_discount,
+      })
+      return e.ok ? e.value : null
+    })
+    .filter((v): v is number => v !== null)
+  return values.length > 0 ? Math.max(...values) : null
+}
+
+function penghematanDariTermahal(): number {
+  let total = 0
+  for (const need of needs.value) {
+    if (!need.chosen_product_id) continue
+    const product = productsFor(need.id).find((p) => p.id === need.chosen_product_id)
+    if (!product) continue
+    const termahal = maxNonSelectedEffectif(need.id)
+    if (termahal === null) continue
+    const efektif = hargaEfektifProduk({
+      harga: product.price,
+      ongkir: product.shipping_cost,
+      voucher: product.voucher_discount,
+    })
+    if (efektif.ok && termahal > efektif.value) total += termahal - efektif.value
+  }
+  return total
+}
+
+async function addNeed(): Promise<void> {
+  if (!needName.value.trim()) return
+  const result = await store.createNeedItem({
+    name: needName.value.trim(),
+    target_qty: needTargetQty.value,
+    unit: needUnit.value ?? undefined,
+  })
+  if (result) {
+    needName.value = ''
+    needTargetQty.value = null
+    needUnit.value = undefined
+    showAddNeed.value = false
+    activeNeedId.value = result.id
+    await store.fetchProducts(result.id)
+    toastStore.success('Kebutuhan berhasil dibuat.')
+  }
+}
+
+async function saveProduct(needId: string): Promise<void> {
+  const editor = editingProduct.value
+  if (!editor) return
+
+  const normalized = normalizeLinkSource(editor.editedUrl)
+  if ('error' in normalized) {
+    editingProduct.value = { ...editor, urlError: normalized.error }
     return
   }
 
-  currentSimulationId.value = result.value.id
-  showIssues.value = false
-  await router.replace({
-    path: route.path,
-    query: { simulation: result.value.id },
-  })
-  toastStore.success(
-    wasEditing
-      ? 'Perubahan simulasi berhasil disimpan.'
-      : 'Simulasi berhasil disimpan.',
-  )
+  const input = {
+    title: editor.editedTitle.trim(),
+    platform: editor.editedTitle ? editor.editedTitle : 'Lainnya',
+    store_name: editor.editedStoreName ?? undefined,
+    url: normalized.url,
+    price: editor.editedPrice ?? 0,
+    pack_size: editor.editedPackSize ?? 0,
+    pack_unit: editor.editedPackUnit,
+    shipping_cost: editor.editedShippingCost ?? 0,
+    voucher_discount: editor.editedVoucherDiscount ?? 0,
+    note: editor.editedNote ?? undefined,
+    price_checked_at: editor.editedPriceCheckedAt
+      ? `${editor.editedPriceCheckedAt}:00`
+      : new Date().toISOString(),
+  }
+
+  let ok = false
+  if (editor.id) {
+    const result = await store.updateNeedProduct(
+      editor.id,
+      editor.need_id,
+      input,
+    )
+    ok = !!result
+  } else {
+    const result = await store.createNeedProduct(needId, input)
+    ok = !!result
+  }
+
+  if (ok) {
+    editingProduct.value = null
+    await store.fetchProducts(needId)
+    toastStore.success('Produk berhasil disimpan.')
+  }
 }
 
-async function duplicateCurrent(): Promise<void> {
-  if (currentSimulationId.value === null) return
+function addProductToNeed(needId: string): void {
+  editingProduct.value = null
+  showAddProduct.value = needId
+}
 
-  const result = await simulationStore.duplicate(currentSimulationId.value)
-  if (!result.ok) {
-    reportSaveError(result, 'household')
+function editProduct(product: SavedProduct): void {
+  editingProduct.value = newEditingProduct(product)
+  showAddProduct.value = null
+}
+
+async function saveNewProduct(needId: string): Promise<void> {
+  const normalized = normalizeLinkSource(newProduct.url)
+  if ('error' in normalized) {
+    newProduct.urlError = normalized.error
     return
   }
 
-  currentSimulationId.value = result.value.id
-  const parsed = householdPayloadSchema.safeParse(result.value.payload)
-  if (parsed.success) applyPayload(parsed.data)
-  await router.replace({
-    path: route.path,
-    query: { simulation: result.value.id },
-  })
-  toastStore.success('Simulasi diduplikasi. Anda sedang membuka salinannya.')
+  const input = {
+    title: newProduct.title.trim(),
+    platform: newProduct.platform.trim() || 'Lainnya',
+    store_name: newProduct.storeName ?? undefined,
+    url: normalized.url,
+    price: newProduct.price ?? 0,
+    pack_size: newProduct.packSize ?? 0,
+    pack_unit: newProduct.packUnit,
+    shipping_cost: newProduct.shippingCost ?? 0,
+    voucher_discount: newProduct.voucherDiscount ?? 0,
+    note: newProduct.note ?? undefined,
+    price_checked_at: newProduct.priceCheckedAt
+      ? `${newProduct.priceCheckedAt}:00`
+      : new Date().toISOString(),
+  }
+
+  const result = await store.createNeedProduct(needId, input)
+  if (result) {
+    newProduct.title = ''
+    newProduct.platform = ''
+    newProduct.storeName = null
+    newProduct.url = ''
+    newProduct.urlError = null
+    newProduct.price = null
+    newProduct.packSize = null
+    newProduct.packUnit = 'kg'
+    newProduct.shippingCost = null
+    newProduct.voucherDiscount = null
+    newProduct.note = null
+    newProduct.priceCheckedAt = formatDateInput(new Date().toISOString())
+    showAddProduct.value = null
+    await store.fetchProducts(needId)
+    toastStore.success('Produk berhasil disimpan.')
+  }
 }
 
-function resetForm(): void {
-  Object.assign(form, blankForm())
-  activeList.value = 'items'
-  currentSimulationId.value = null
-  showIssues.value = false
-  resetOpen.value = false
-  void router.replace({ path: route.path, query: {} })
-  toastStore.info('Form dikosongkan. Data yang sudah tersimpan tidak dihapus.')
+async function selectProduct(needId: string, productId: string | null): Promise<void> {
+  await store.chooseNeedProduct(needId, productId)
+}
+
+async function removeSelectedNeed(id: string): Promise<void> {
+  const ok = await store.removeNeedItem(id)
+  if (ok) {
+    if (activeNeedId.value === id) activeNeedId.value = null
+    toastStore.success('Kebutuhan dihapus.')
+  }
+}
+
+async function removeSelectedProduct(needId: string, id: string): Promise<void> {
+  const ok = await store.removeNeedProduct(id, needId)
+  if (ok) {
+    await store.fetchProducts(needId)
+    toastStore.success('Produk dihapus.')
+  }
+}
+
+function confirmDelete(): void {
+  if (!deleteOpen.value) return
+  if (deleteOpen.value.isProduct && deleteOpen.value.needId) {
+    void removeSelectedProduct(deleteOpen.value.needId, deleteOpen.value.id)
+  } else {
+    void removeSelectedNeed(deleteOpen.value.id)
+  }
+  deleteOpen.value = null
+}
+
+async function isiContoh(): Promise<void> {
+  if (needs.value.length > 0) {
+    toastStore.info('Contoh hanya diisi bila belum ada kebutuhan.')
+    return
+  }
+
+  const result = await store.createNeedItem({
+    name: 'Beras',
+    target_qty: 5,
+    unit: 'kg',
+  })
+  if (!result) return
+
+  const needId = result.id
+  const now = new Date().toISOString()
+
+  await store.createNeedProduct(needId, {
+    title: 'Beras A',
+    platform: 'Shopee',
+    store_name: 'Toko A',
+    url: 'https://shopee.co.id/beras-a',
+    price: 68_000,
+    pack_size: 5,
+    pack_unit: 'kg',
+    shipping_cost: 10_000,
+    voucher_discount: 3_000,
+    note: 'Beras premium 5 kg',
+    price_checked_at: now,
+  })
+  await store.createNeedProduct(needId, {
+    title: 'Beras B',
+    platform: 'Tokopedia',
+    store_name: 'Toko B',
+    url: 'https://tokopedia.com/beras-b',
+    price: 62_000,
+    pack_size: 5,
+    pack_unit: 'kg',
+    shipping_cost: 18_000,
+    voucher_discount: 0,
+    note: 'Beras medium 5 kg',
+    price_checked_at: now,
+  })
+  await store.createNeedProduct(needId, {
+    title: 'Beras C',
+    platform: 'Lazada',
+    store_name: 'Toko C',
+    url: 'https://lazada.co.id/beras-c',
+    price: 25_000,
+    pack_size: 2,
+    pack_unit: 'kg',
+    shipping_cost: 8_000,
+    voucher_discount: 0,
+    note: 'Beras hemat 2 kg',
+    price_checked_at: now,
+  })
+
+  await store.fetchProducts(needId)
+  activeNeedId.value = needId
+  toastStore.success('Contoh kebutuhan Beras A/B/C telah diisi.')
 }
 
 function exportCsv(): void {
-  showIssues.value = true
-  if (hasBlockingErrors()) {
-    toastStore.error('Periksa input yang ditandai sebelum mengekspor CSV.')
-    return
+  const lines = ['Kebutuhan,Produk,Platform,Harga Efektif,Link']
+  for (const need of needs.value) {
+    if (!need.chosen_product_id) continue
+    const product = productsFor(need.id).find((p) => p.id === need.chosen_product_id)
+    if (!product) continue
+    const efektif = hargaEfektifProduk({
+      harga: product.price,
+      ongkir: product.shipping_cost,
+      voucher: product.voucher_discount,
+    })
+    const hargaEfektif = efektif.ok ? formatRupiah(efektif.value) : '-'
+    const escape = (v: string) =>
+      /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    lines.push(
+      [
+        escape(need.name),
+        escape(product.title),
+        escape(product.platform),
+        hargaEfektif,
+        escape(product.url),
+      ].join(','),
+    )
   }
-
-  const payload = buildPayload()
-  if (!payload) {
-    toastStore.error('Data belum lengkap untuk diekspor.')
-    return
-  }
-
-  const timestamp = new Date().toISOString()
-  const record: SimulationRecord = {
-    id: currentSimulationId.value ?? crypto.randomUUID(),
-    moduleType: 'household',
-    name: simulationName(payload),
-    payload,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    schemaVersion: SCHEMA_VERSION,
-  }
-
-  const csv = simulationsToCsv('household', [record])
-  downloadCsv(`hematpintar-rumah-tangga-${fileDateStamp()}.csv`, csv)
-  toastStore.success('CSV simulasi Hemat Rumah Tangga berhasil diunduh.')
+  const csv = lines.join('\n')
+  downloadCsv(`hematpintar-rumah-tangga-belanja-${fileDateStamp()}.csv`, csv)
+  toastStore.success('CSV daftar belanja berhasil diunduh.')
 }
+
 </script>
 
 <template>
   <div class="space-y-8">
-    <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <p class="text-sm font-medium text-primary-700">Hemat Rumah Tangga</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="text-sm font-medium text-primary-700">Akun wajib login</p>
+          <StatusBadge label="Data disimpan ke akun Anda" tone="info" />
+        </div>
         <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          Susun belanja rumah tangga yang masih dalam anggaran
+          Hemat Rumah Tangga
         </h1>
         <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Masukkan anggaran dan daftar belanja. Total, sisa anggaran, status,
-          dan penghematan dihitung langsung saat input berubah.
+          Susun daftar kebutuhan, bandingkan link produk dari platform, dan atur
+          anggaran bulanan. Semua perhitungan harga dilakukan dari isian manual
+          Anda.
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <StatusBadge
-          v-if="currentSimulationId"
-          label="Mode edit simulasi tersimpan"
-          tone="info"
-        />
         <button type="button" class="btn btn-secondary" @click="isiContoh">
           Isi contoh
+        </button>
+        <button type="button" class="btn btn-primary" @click="showAddNeed = true">
+          Tambah kebutuhan
         </button>
       </div>
     </header>
 
-    <p v-if="loadingSaved" class="text-sm text-slate-600" aria-live="polite">
-      Memuat simulasi tersimpan...
+    <p class="rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm text-warning-700" role="status">
+      Harga diisi manual dan bisa berubah di platform. Cek ulang sebelum membeli.
+      Ongkir bergantung lokasi dan voucher bergantung akun Anda.
     </p>
 
-    <form ref="formElement" class="space-y-6" novalidate @submit.prevent="save">
-      <section class="card p-5" aria-labelledby="judul-anggaran">
-        <h2 id="judul-anggaran" class="text-base font-semibold text-slate-900">
-          Anggaran dan kebutuhan
-        </h2>
-        <div class="mt-4 grid gap-4 md:grid-cols-2">
-          <InputRupiah
-            v-model="form.budget"
-            label="Anggaran belanja"
-            hint="Batas belanja untuk periode ini."
-            required
-            :error="issueFor('budget')"
-          />
-          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
-            <p class="font-medium text-slate-700">Cara menghitung</p>
-            <p class="mt-1">
-              Total belanja = jumlah kuantitas × harga per satuan. Sisa
-              anggaran = anggaran − total belanja.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section class="card p-5" aria-labelledby="judul-daftar">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 id="judul-daftar" class="text-base font-semibold text-slate-900">
-              Daftar belanja
-            </h2>
-            <p class="mt-1 text-sm text-slate-600">
-              Gunakan tab untuk berpindah antara belanja utama, baseline, dan
-              alternatif.
-            </p>
-          </div>
-          <button type="button" class="btn btn-secondary" @click="addRow">
-            {{ activeConfig.addLabel }}
-          </button>
-        </div>
-
-        <div
-          class="mt-4 flex flex-wrap gap-2"
-          role="tablist"
-          aria-label="Jenis daftar belanja"
-        >
-          <button
-            v-for="tab in TABS"
-            :key="tab.id"
-            type="button"
-            role="tab"
-            :aria-selected="activeList === tab.id"
-            :class="[
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors',
-              activeList === tab.id
-                ? 'border-primary-600 bg-primary-600 text-white'
-                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
-            ]"
-            @click="activeList = tab.id"
-          >
-            {{ tab.label }}
-            <span
-              class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-              :class="
-                activeList === tab.id
-                  ? 'bg-white/20 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              "
-            >
-              {{ activeCount(tab.id) }}
-            </span>
-          </button>
-        </div>
-
-        <div
-          :id="`panel-${activeList}`"
-          class="mt-4"
-          role="tabpanel"
-          :aria-label="activeConfig.title"
-        >
-          <h3 class="text-sm font-semibold text-slate-800">
-            {{ activeConfig.title }}
-          </h3>
-          <p class="mt-1 text-sm text-slate-600">
-            {{ activeConfig.description }}
-          </p>
-
-          <p
-            v-if="issueFor(activeConfig.key)"
-            class="mt-3 text-sm text-error-600"
-            role="alert"
-          >
-            {{ issueFor(activeConfig.key) }}
-          </p>
-
-          <div class="mt-4 space-y-4">
-            <fieldset
-              v-for="(row, index) in activeRows"
-              :key="row.rowId"
-              class="rounded-lg border border-slate-200 p-4"
-            >
-              <legend class="px-1 text-sm font-semibold text-slate-700">
-                {{ activeConfig.itemLabel }} {{ index + 1 }}
-              </legend>
-
-              <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <label :for="`barang-nama-${row.rowId}`" class="label-base">
-                    Nama barang
-                    <span class="text-error-600" aria-hidden="true">*</span>
-                  </label>
-                  <input
-                    :id="`barang-nama-${row.rowId}`"
-                    v-model="row.nama"
-                    type="text"
-                    class="input-base"
-                    autocomplete="off"
-                    maxlength="120"
-                    :aria-invalid="
-                      specificRowIssue(row.rowId, 'nama') ? 'true' : undefined
-                    "
-                  />
-                  <p
-                    v-if="specificRowIssue(row.rowId, 'nama')"
-                    class="mt-1.5 text-sm text-error-600"
-                    role="alert"
-                  >
-                    {{ specificRowIssue(row.rowId, 'nama') }}
-                  </p>
-                </div>
-
-                <InputQty
-                  v-model="row.kuantitas"
-                  label="Kuantitas"
-                  hint="Jumlah yang dibeli, bukan harga paket."
-                  :min="0"
-                  :step="0.01"
-                  positive
-                  required
-                  :error="specificRowIssue(row.rowId, 'kuantitas')"
-                />
-
-                <InputSelectSatuan v-model="row.satuan" label="Satuan" />
-
-                <InputRupiah
-                  v-model="row.harga"
-                  label="Harga per satuan"
-                  hint="Harga untuk 1 satuan yang dipilih."
-                  required
-                  :error="specificRowIssue(row.rowId, 'harga')"
-                />
-              </div>
-
-              <div class="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  class="btn btn-ghost text-error-700 hover:bg-error-50"
-                  :aria-label="`Hapus ${activeConfig.itemLabel.toLowerCase()} ${index + 1}`"
-                  @click="removeRow(index)"
-                >
-                  Hapus barang
-                </button>
-              </div>
-            </fieldset>
-          </div>
-
-          <p v-if="activeRows.length === 0" class="mt-4 text-sm text-slate-600">
-            Belum ada baris pada daftar ini. Klik
-            <strong>{{ activeConfig.addLabel }}</strong> untuk menambahkan.
-          </p>
-        </div>
-      </section>
-
-      <section class="card p-5" aria-labelledby="judul-catatan">
-        <h2 id="judul-catatan" class="text-base font-semibold text-slate-900">
-          Catatan dan cek harga satuan
-        </h2>
-
-        <div class="mt-4 grid gap-4">
-          <div>
-            <label for="household-catatan" class="label-base">
-              Catatan (opsional)
-            </label>
-            <textarea
-              id="household-catatan"
-              v-model="form.notes"
-              class="input-base min-h-24"
-              maxlength="1000"
-              placeholder="Contoh: belanja mingguan, kebutuhan bulan ini, atau toko pembanding."
-            />
-          </div>
-
-          <div class="rounded-lg border border-slate-200 p-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <h3 class="text-sm font-semibold text-slate-800">
-                Cek harga per satuan standar
-              </h3>
-              <StatusBadge label="Opsional" tone="neutral" />
-            </div>
-            <p class="mt-1 text-sm text-slate-600">
-              Bandingkan kemasan dengan satuan standar. Contoh: Rp18.000 untuk
-              750 g setara Rp24.000/kg.
-            </p>
-
-            <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <label for="cek-nama-kemasan" class="label-base">
-                  Nama kemasan (opsional)
-                </label>
-                <input
-                  id="cek-nama-kemasan"
-                  v-model="form.unitPriceCheck.nama"
-                  type="text"
-                  class="input-base"
-                  autocomplete="off"
-                  maxlength="120"
-                />
-              </div>
-
-              <InputRupiah
-                v-model="form.unitPriceCheck.hargaKemasan"
-                label="Harga kemasan"
-                hint="Harga total satu kemasan."
-                :error="issueFor('unitPriceCheck.hargaKemasan')"
-              />
-
-              <InputQty
-                v-model="form.unitPriceCheck.isiKemasan"
-                label="Isi kemasan"
-                hint="Berat, volume, atau jumlah isi."
-                :min="0"
-                :step="0.01"
-                positive
-                :error="issueFor('unitPriceCheck.isiKemasan')"
-              />
-
-              <InputSelectSatuan
-                v-model="form.unitPriceCheck.satuan"
-                label="Satuan isi kemasan"
-              />
-            </div>
-
-            <p
-              v-if="issueFor('unitPriceCheck')"
-              class="mt-3 text-sm text-error-600"
-              role="alert"
-            >
-              {{ issueFor('unitPriceCheck') }}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <div
-        v-if="showIssues && formIssues.length > 0"
-        class="rounded-lg border border-error-200 bg-error-50 p-4 text-sm text-error-700"
-        role="alert"
-      >
-        <p class="font-medium">Periksa input berikut:</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5">
-          <li v-for="issue in formIssues" :key="issue.field">
-            {{ issue.message }}
-          </li>
-        </ul>
-      </div>
-    </form>
-
-    <section aria-labelledby="judul-hasil">
-      <h2 id="judul-hasil" class="mb-3 text-base font-semibold text-slate-900">
-        Hasil utama
+    <section class="card p-5" aria-labelledby="judul-anggaran-rumah-tangga">
+      <h2 id="judul-anggaran-rumah-tangga" class="text-base font-semibold text-slate-900">
+        Anggaran bulanan
       </h2>
-
-      <div
-        v-if="calculationErrors.length > 0"
-        class="mb-4 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm text-warning-700"
-        role="alert"
-      >
-        <p class="font-medium">Perhitungan belum lengkap</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5">
-          <li v-for="message in calculationErrors" :key="message">
-            {{ message }}
-          </li>
-        </ul>
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <ResultCard
-          data-testid="total-belanja"
-          title="Total belanja"
-          :value="rupiahOr(total)"
-          tone="primary"
-          description="Jumlah kuantitas × harga per satuan dari daftar belanja utama."
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <InputRupiah
+          v-model="budgetInput"
+          label="Anggaran bulanan"
+          hint="Batas belanja per bulan."
+          required
         />
-        <ResultCard
-          data-testid="sisa-anggaran"
-          title="Sisa / kelebihan anggaran"
-          :value="
-            sisa === null
-              ? '—'
-              : sisa >= 0
-                ? formatRupiah(sisa)
-                : `Kelebihan ${formatRupiah(Math.abs(sisa))}`
-          "
-          :tone="
-            sisa === null
-              ? 'neutral'
-              : sisa < 0
-                ? 'danger'
-                : status === 'mendekati_batas'
-                  ? 'warning'
-                  : 'success'
-          "
-          description="Anggaran − total belanja. Nilai negatif ditampilkan sebagai kelebihan."
-        />
-        <ResultCard
-          data-testid="persen-anggaran"
-          title="Persentase anggaran terpakai"
-          :value="form.budget === null ? '—' : persenOr(persen)"
-          :tone="
-            status === 'melebihi_anggaran'
-              ? 'danger'
-              : status === 'mendekati_batas'
-                ? 'warning'
-                : 'neutral'
-          "
-          description="Total belanja ÷ anggaran. Tidak tersedia bila anggaran Rp0."
-        />
-        <ResultCard
-          data-testid="status-anggaran"
-          title="Status anggaran"
-          :value="statusView.label"
-          :tone="statusView.tone"
-          :description="statusView.description"
-        />
-        <ResultCard
-          data-testid="baseline-total"
-          title="Total baseline"
-          :value="rupiahOr(baselineTotal)"
-          tone="neutral"
-          description="Total harga pada daftar baseline."
-        />
-        <ResultCard
-          data-testid="alternatif-total"
-          title="Total alternatif"
-          :value="rupiahOr(alternativeTotal)"
-          tone="neutral"
-          description="Total harga pada daftar alternatif."
-        />
-        <ResultCard
-          data-testid="penghematan"
-          title="Penghematan"
-          :value="rupiahOr(savings)"
-          :tone="
-            savings === null
-              ? 'neutral'
-              : savings > 0
-                ? 'success'
-                : savings < 0
-                  ? 'danger'
-                  : 'neutral'
-          "
-          description="Baseline − alternatif. Positif berarti alternatif lebih murah."
-        />
-        <ResultCard
-          data-testid="harga-satuan"
-          title="Harga per satuan standar"
-          :value="
-            unitCheck === null
-              ? 'Tidak tersedia'
-              : `${formatRupiah(unitCheck.harga)}/${unitCheck.satuan}`
-          "
-          tone="neutral"
-          :description="
-            unitCheck === null
-              ? 'Lengkapi cek harga kemasan untuk melihat harga per kg, l, atau pcs.'
-              : `${formatRupiah(form.unitPriceCheck.hargaKemasan ?? 0)} ÷ ${numberFormat(unitCheck.isiStandar)} ${unitCheck.satuan} = ${formatRupiah(unitCheck.harga)}/${unitCheck.satuan}.`
-          "
-        />
-      </div>
-    </section>
-
-    <section class="card p-5" aria-labelledby="judul-rincian">
-      <h2 id="judul-rincian" class="text-base font-semibold text-slate-900">
-        Rincian perhitungan
-      </h2>
-      <dl class="mt-4 divide-y divide-slate-100 text-sm">
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Anggaran</dt>
-          <dd class="font-medium text-slate-900">
-            {{ form.budget === null ? '—' : formatRupiah(form.budget) }}
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Total belanja utama</dt>
-          <dd class="font-semibold text-slate-900">{{ rupiahOr(total) }}</dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Sisa / kelebihan anggaran</dt>
-          <dd class="font-medium text-slate-900">
-            {{
-              sisa === null
-                ? '—'
-                : sisa >= 0
-                  ? formatRupiah(sisa)
-                  : `Kelebihan ${formatRupiah(Math.abs(sisa))}`
-            }}
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Persentase anggaran terpakai</dt>
-          <dd class="font-medium text-slate-900">
-            {{ form.budget === null ? '—' : persenOr(persen) }}
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Total baseline</dt>
-          <dd class="font-medium text-slate-900">{{ rupiahOr(baselineTotal) }}</dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Total alternatif</dt>
-          <dd class="font-medium text-slate-900">
-            {{ rupiahOr(alternativeTotal) }}
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Penghematan (baseline − alternatif)</dt>
-          <dd class="font-medium text-slate-900">{{ rupiahOr(savings) }}</dd>
-        </div>
-        <div class="flex items-center justify-between gap-4 py-2">
-          <dt class="text-slate-600">Harga per satuan standar</dt>
-          <dd class="font-medium text-slate-900">
-            {{
-              unitCheck === null
-                ? 'Tidak tersedia'
-                : `${formatRupiah(unitCheck.harga)}/${unitCheck.satuan}`
-            }}
-          </dd>
-        </div>
-      </dl>
-      <p class="mt-3 text-xs leading-relaxed text-slate-500">
-        Total = Σ (kuantitas × harga per satuan). Sisa = anggaran − total.
-        Persentase = total ÷ anggaran (tidak dihitung bila anggaran Rp0).
-        Penghematan = total baseline − total alternatif.
-      </p>
-    </section>
-
-    <section class="card p-5" aria-labelledby="judul-rekomendasi">
-      <div class="flex flex-wrap items-center gap-2">
-        <h2 id="judul-rekomendasi" class="text-base font-semibold text-slate-900">
-          Status dan rekomendasi
-        </h2>
-        <StatusBadge :label="statusView.label" :tone="statusView.tone" />
-      </div>
-      <p class="mt-2 text-sm leading-relaxed text-slate-600">
-        {{ statusView.description }}
-      </p>
-
-      <ul v-if="rekomendasi.length > 0" class="mt-4 space-y-2">
-        <li
-          v-for="item in rekomendasi"
-          :key="item"
-          class="flex gap-2 text-sm leading-relaxed text-slate-700"
-        >
-          <svg
-            class="mt-0.5 h-4 w-4 shrink-0 text-primary-600"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-5-5 5 5-5 5" />
-          </svg>
-          <span>{{ item }}</span>
-        </li>
-      </ul>
-      <p v-else class="mt-3 text-sm text-slate-600">
-        Rekomendasi akan muncul setelah data utama lengkap.
-      </p>
-      <p class="mt-3 text-xs text-slate-500">
-        Rekomendasi dibuat dari aturan perhitungan, bukan analisis AI.
-      </p>
-    </section>
-
-    <section class="card p-5" aria-labelledby="judul-aksi">
-      <h2 id="judul-aksi" class="text-base font-semibold text-slate-900">
-        Aksi
-      </h2>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button type="button" class="btn btn-primary" :disabled="saving" @click="save">
-          {{ saving ? 'Menyimpan...' : currentSimulationId ? 'Simpan perubahan' : 'Simpan' }}
-        </button>
         <button
           type="button"
-          class="btn btn-secondary"
-          :disabled="!currentSimulationId"
-          :title="
-            currentSimulationId
-              ? 'Duplikasi simulasi tersimpan'
-              : 'Simpan simulasi terlebih dahulu untuk menduplikasi'
-          "
-          @click="duplicateCurrent"
+          class="btn btn-primary"
+          :disabled="store.loading"
+          @click="store.setMonthlyBudget(budgetInput ?? 0)"
         >
-          Duplikat
+          Simpan anggaran
         </button>
+      </div>
+
+      <p v-if="budget === null" class="mt-3 text-sm text-slate-500">
+        Belum ada anggaran bulanan. Isi di atas untuk melihat persentase
+        pemakaian.
+      </p>
+    </section>
+
+    <section class="card p-5" aria-labelledby="judul-daftar-kebutuhan">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="judul-daftar-kebutuhan" class="text-base font-semibold text-slate-900">
+            Daftar kebutuhan
+          </h2>
+          <p class="mt-1 text-sm text-slate-600">
+            Setiap kebutuhan boleh punya beberapa produk kandidat. Pilih satu
+            produk terpilih per kebutuhan untuk dihitung ke total belanja.
+          </p>
+        </div>
+      </div>
+
+      <p v-if="needsLoading" class="text-sm text-slate-600" aria-live="polite">
+        Memuat kebutuhan dari akun...
+      </p>
+
+      <div
+        v-if="error"
+        class="mt-3 rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700"
+        role="alert"
+      >
+        {{ error ?? '' }}
+        <button type="button" class="btn btn-secondary mt-3" @click="loadData">
+          Coba lagi
+        </button>
+      </div>
+
+      <div v-if="showAddNeed" class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <h4 class="text-sm font-semibold text-slate-900 mb-3">Buat kebutuhan baru</h4>
+        <form class="grid gap-3 md:grid-cols-3" novalidate @submit.prevent="addNeed">
+          <div>
+            <label class="label-base">Nama kebutuhan</label>
+            <input v-model="needName" type="text" class="input-base" required />
+          </div>
+          <div>
+            <label class="label-base">Target jumlah</label>
+            <input v-model.number="needTargetQty" type="number" class="input-base" min="0" step="0.01" />
+          </div>
+          <div>
+            <label class="label-base">Satuan target</label>
+            <InputSelectSatuan v-model="needUnit" label="" />
+          </div>
+          <div class="md:col-span-3 flex gap-2">
+            <button type="button" class="btn btn-secondary" @click="showAddNeed = false">
+              Batal
+            </button>
+            <button type="submit" class="btn btn-primary">Buat kebutuhan</button>
+          </div>
+        </form>
+      </div>
+
+      <div v-if="needs.length === 0 && !needsLoading" class="mt-6">
+        <EmptyState
+          title="Belum ada kebutuhan"
+          description="Buat kebutuhan pertama, misalnya beras untuk sebulan, lalu tambahkan produk kandidat."
+        >
+          <button type="button" class="btn btn-primary" @click="showAddNeed = true">
+            Buat kebutuhan
+          </button>
+        </EmptyState>
+      </div>
+
+      <div v-else class="mt-4 divide-y divide-slate-100">
+        <div
+          v-for="need in needs"
+          :key="need.id"
+          class="mt-6 rounded-lg border border-slate-200 bg-white p-5"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-900 truncate max-w-[20rem]">
+                {{ need.name }}
+              </h3>
+              <p v-if="need.target_qty && need.unit" class="mt-0.5 text-xs text-slate-500">
+                Target {{ need.target_qty }} {{ need.unit }}
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <StatusBadge
+                v-if="selectedProductId(need.id)"
+                label="Produk terpilih"
+                tone="success"
+              />
+              <button
+                type="button"
+                class="btn btn-secondary text-xs"
+                @click="addProductToNeed(need.id)"
+              >
+                Tambah produk
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost text-error-700 hover:bg-error-50 text-xs"
+                @click="
+                  deleteOpen = { id: need.id, name: need.name }
+                "
+              >
+                Hapus kebutuhan
+              </button>
+            </div>
+          </div>
+
+          <div v-if="productsLoading" class="mt-4 text-sm text-slate-600">
+            Memuat produk...
+          </div>
+
+          <table v-else class="w-full text-sm mt-4">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-xs text-slate-500">
+                <th class="pb-3">Produk</th>
+                <th class="pb-3 text-right">Platform</th>
+                <th class="pb-3 text-right">Harga Efektif</th>
+                <th class="pb-3 text-right">Per Satuan</th>
+                <th class="pb-3 text-right">Terpilih</th>
+                <th class="pb-3 text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr
+                v-for="product in rankedProducts(need.id)"
+                :key="product.id"
+                class="group"
+              >
+                <td class="pb-3">
+                  <div class="flex items-center gap-2">
+                    <a
+                      :href="product.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary-700 hover:underline font-medium truncate max-w-xs block"
+                      :title="`${product.title} (${product.platform})`"
+                    >
+                      {{ product.title }}
+                    </a>
+                    <span class="ml-1 text-xs bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">
+                      {{ product.platform }}
+                    </span>
+                    <p v-if="product.store_name" class="mt-0.5 text-xs text-slate-500 truncate max-w-xs">
+                      {{ product.store_name }}
+                    </p>
+                    <p
+                      v-if="product.note"
+                      class="mt-0.5 text-xs text-slate-400 italic truncate max-w-xs"
+                    >
+                      {{ product.note }}
+                    </p>
+                    <p v-if="!product.segar" class="mt-0.5 text-xs text-warning-600 font-medium">
+                      Harga dicek &gt; 7 hari lalu
+                    </p>
+                    <p
+                      v-if="product.satuanTidakSebanding"
+                      class="mt-0.5 text-xs text-error-600 font-medium"
+                    >
+                      Satuan tidak sebanding dengan produk lain
+                    </p>
+                  </div>
+                </td>
+                <td class="pb-3 text-right text-slate-600">
+                  {{ formatRupiah(product.price) }}
+                </td>
+                <td class="pb-3 text-right">
+                  <span
+                    :class="
+                      product.hargaEfektif !== null
+                        ? 'font-medium'
+                        : 'text-slate-400'
+                    "
+                  >
+                    {{ product.hargaEfektif !== null ? formatRupiah(product.hargaEfektif) : '—' }}
+                  </span>
+                  <span
+                    v-if="
+                      product.shipping_cost ||
+                      product.voucher_discount
+                    "
+                    class="ml-1 text-xs text-slate-400"
+                  >
+                    ({{
+                      product.shipping_cost
+                        ? `+${formatRupiah(product.shipping_cost)}`
+                        : ''
+                    }}
+                    {{
+                      product.voucher_discount
+                        ? `-${formatRupiah(product.voucher_discount)}`
+                        : ''
+                    }})
+                  </span>
+                </td>
+                <td class="pb-3 text-right">
+                  <span v-if="product.hargaPerSatuan !== null" class="font-medium">
+                    {{ formatRupiah(product.hargaPerSatuan) }}/
+                    {{ product.satuanStandar }}
+                  </span>
+                  <span v-else class="text-slate-400">—</span>
+                  <span
+                    v-if="product.termurah"
+                    class="ml-2 inline-flex items-center gap-1 rounded bg-success-50 text-success-700 px-2 py-0.5 text-xs font-semibold"
+                  >
+                    <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Termurah
+                  </span>
+                </td>
+                <td class="pb-3 text-right">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-ghost text-primary-700 hover:bg-primary-50"
+                    :disabled="selectedProductId(need.id) === product.id"
+                    @click="selectProduct(need.id, product.id)"
+                  >
+                    {{ selectedProductId(need.id) === product.id ? 'Terpilih' : 'Pilih ini' }}
+                  </button>
+                </td>
+                <td class="pb-3 text-right">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-ghost text-slate-600 hover:bg-slate-100"
+                    @click="editProduct(product)"
+                  >
+                    Ubah
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-ghost text-error-700 hover:bg-error-50 ml-1"
+                    @click="
+                      deleteOpen = { id: product.id, name: product.title, needId: need.id, isProduct: true }
+                    "
+                  >
+                    Hapus
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p v-if="productsFor(need.id).length === 0" class="mt-4 text-sm text-slate-500">
+            Belum ada produk kandidat. Tambahkan produk untuk membandingkan
+            harga.
+          </p>
+
+          <div v-if="editingProduct?.need_id === need.id" class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h4 class="text-sm font-semibold text-slate-900 mb-3">Ubah produk</h4>
+            <form class="grid gap-3 md:grid-cols-4" novalidate @submit.prevent="saveProduct(need.id)">
+              <div>
+                <label class="label-base">Nama produk</label>
+                <input
+                  v-model="editingProduct.editedTitle"
+                  type="text"
+                  class="input-base"
+                  required
+                />
+              </div>
+              <div>
+                <label class="label-base">Platform</label>
+                <input
+                  v-model="editingProduct.editedTitle"
+                  type="text"
+                  class="input-base"
+                  placeholder="Contoh: Shopee"
+                />
+                <p class="mt-0.5 text-xs text-slate-500">
+                  Platform diambil dari nama/link; ubah sesuai keinginan.
+                </p>
+              </div>
+              <div>
+                <label class="label-base">Toko</label>
+                <input
+                  v-model="editingProduct.editedStoreName"
+                  type="text"
+                  class="input-base"
+                  placeholder="Opsional"
+                />
+              </div>
+              <div>
+                <label class="label-base">Link produk</label>
+                <input
+                  v-model="editingProduct.editedUrl"
+                  type="text"
+                  class="input-base"
+                  placeholder="https://..."
+                  :class="{ 'border-error-500': Boolean(editingProduct.urlError) }"
+                />
+                <p v-if="editingProduct.urlError" class="mt-0.5 text-xs text-error-600" role="alert">
+                  {{ editingProduct.urlError }}
+                </p>
+              </div>
+              <div>
+                <label class="label-base">Harga</label>
+                <input
+                  v-model.number="editingProduct.editedPrice"
+                  type="number"
+                  inputmode="numeric"
+                  class="input-base"
+                  min="0"
+                  required
+                />
+              </div>
+              <div class="flex items-end">
+                <InputQty
+                  v-model.number="editingProduct.editedPackSize"
+                  label="Isi"
+                  :satuan="editingProduct.editedPackUnit"
+                  positive
+                  required
+                />
+                <InputSelectSatuan
+                  v-model="editingProduct.editedPackUnit"
+                  label="Satuan isi"
+                />
+              </div>
+              <div>
+                <label class="label-base">Ongkir</label>
+                <input
+                  v-model.number="editingProduct.editedShippingCost"
+                  type="number"
+                  inputmode="numeric"
+                  class="input-base"
+                  min="0"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label class="label-base">Voucher</label>
+                <input
+                  v-model.number="editingProduct.editedVoucherDiscount"
+                  type="number"
+                  inputmode="numeric"
+                  class="input-base"
+                  min="0"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label class="label-base">Catatan</label>
+                <input
+                  v-model="editingProduct.editedNote"
+                  type="text"
+                  class="input-base"
+                  placeholder="Opsional"
+                />
+              </div>
+              <div>
+                <label class="label-base">Tanggal cek harga</label>
+                <input
+                  v-model="editingProduct.editedPriceCheckedAt"
+                  type="datetime-local"
+                  class="input-base"
+                />
+              </div>
+              <div class="md:col-span-4 flex gap-2">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  @click="editingProduct = null"
+                >
+                  Batal
+                </button>
+                <button type="submit" class="btn btn-primary">Simpan perubahan</button>
+              </div>
+            </form>
+          </div>
+
+          <div v-if="showAddProduct === need.id" class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h4 class="text-sm font-semibold text-slate-900 mb-3">Tambah produk kandidat</h4>
+            <form class="grid gap-3 md:grid-cols-4" novalidate @submit.prevent="saveNewProduct(need.id)">
+              <div>
+                <label class="label-base">Nama produk</label>
+                <input v-model="newProduct.title" type="text" class="input-base" required />
+              </div>
+              <div>
+                <label class="label-base">Platform</label>
+                <input v-model="newProduct.platform" type="text" class="input-base" placeholder="Shopee" />
+              </div>
+              <div>
+                <label class="label-base">Toko</label>
+                <input v-model="newProduct.storeName" type="text" class="input-base" placeholder="Opsional" />
+              </div>
+              <div>
+                <label class="label-base">Link produk</label>
+                <input v-model="newProduct.url" type="text" class="input-base" placeholder="https://..." required />
+                <p v-if="newProduct.urlError" class="mt-0.5 text-xs text-error-600" role="alert">{{ newProduct.urlError }}</p>
+              </div>
+              <div>
+                <label class="label-base">Harga</label>
+                <input v-model.number="newProduct.price" type="number" inputmode="numeric" class="input-base" min="0" required />
+              </div>
+              <div class="flex items-end">
+                <InputQty v-model.number="newProduct.packSize" label="Isi" :satuan="newProduct.packUnit" positive required />
+                <InputSelectSatuan v-model="newProduct.packUnit" label="Satuan isi" />
+              </div>
+              <div>
+                <label class="label-base">Ongkir</label>
+                <input v-model.number="newProduct.shippingCost" type="number" inputmode="numeric" class="input-base" min="0" placeholder="0" />
+              </div>
+              <div>
+                <label class="label-base">Voucher</label>
+                <input v-model.number="newProduct.voucherDiscount" type="number" inputmode="numeric" class="input-base" min="0" placeholder="0" />
+              </div>
+              <div>
+                <label class="label-base">Catatan</label>
+                <input v-model="newProduct.note" type="text" class="input-base" placeholder="Opsional" />
+              </div>
+              <div>
+                <label class="label-base">Tanggal cek harga</label>
+                <input v-model="newProduct.priceCheckedAt" type="datetime-local" class="input-base" />
+              </div>
+              <div class="md:col-span-4 flex gap-2">
+                <button type="button" class="btn btn-secondary" @click="showAddProduct = null">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan produk</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card p-5" aria-labelledby="judul-ringkasan">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="judul-ringkasan" class="text-base font-semibold text-slate-900">
+          Ringkasan belanja terpilih
+        </h2>
         <button type="button" class="btn btn-secondary" @click="exportCsv">
           Ekspor CSV
         </button>
-        <button type="button" class="btn btn-ghost" @click="resetOpen = true">
-          Reset
-        </button>
       </div>
-      <p v-if="!currentSimulationId" class="mt-2 text-xs text-slate-500">
-        Duplikat tersedia setelah simulasi disimpan.
+      <div class="mt-4 grid gap-4 md:grid-cols-4">
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <p class="text-xs text-slate-500">Total terpilih</p>
+          <p class="mt-1 text-lg font-semibold text-slate-900">
+            {{ formatRupiah(selectedTotal()) }}
+          </p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <p class="text-xs text-slate-500">Sisa / kelebihan</p>
+          <p class="mt-1 text-lg font-semibold text-slate-900">
+            {{
+              budget && budget.monthly_budget !== null
+                ? formatRupiah(budget.monthly_budget - selectedTotal())
+                : '—'
+            }}
+          </p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <p class="text-xs text-slate-500">Persen terpakai</p>
+          <p class="mt-1 text-lg font-semibold text-slate-900">
+            {{
+              budget && budget.monthly_budget > 0
+                ? formatPercent(selectedTotal() / budget.monthly_budget)
+                : 'Tidak tersedia'
+            }}
+          </p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <p class="text-xs text-slate-500">Penghematan vs termahal</p>
+          <p class="mt-1 text-lg font-semibold text-slate-900">
+            {{ formatRupiah(penghematanDariTermahal()) }}
+          </p>
+        </div>
+      </div>
+
+      <p class="mt-4 text-sm text-slate-600">
+        Pengematan dihitung per kebutuhan: selisih harga produk termahal (yang
+        tidak dipilih) dengan produk yang Anda pilih, dengan asumsi kualitas dan
+        jumlah dianggap setara. Hasil ini adalah estimasi, bukan jaminan.
       </p>
     </section>
 
-    <section
-      class="rounded-card border border-warning-200 bg-warning-50 p-5"
-      aria-labelledby="judul-asumsi"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <h2 id="judul-asumsi" class="text-base font-semibold text-warning-700">
-          Asumsi
-        </h2>
-        <StatusBadge label="Perkiraan, bukan tagihan final" tone="warning" />
-      </div>
-      <ul class="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-warning-700">
-        <li>
-          Harga yang dimasukkan adalah harga per satuan, bukan total per paket.
-          Jika hanya mengetahui harga paket, isi kuantitas sesuai isi paket atau
-          gunakan cek harga per satuan standar.
-        </li>
-        <li>
-          Total belanja <strong>belum termasuk</strong> ongkos kirim, pajak,
-          biaya administrasi, dan biaya lain di luar harga barang.
-        </li>
-        <li>
-          Perbandingan baseline dan alternatif hanya sah jika kualitas,
-          kuantitas, satuan, dan kebutuhan yang dibandingkan sama.
-        </li>
-        <li>
-          Satuan yang berbeda dimensi, misalnya gram dan mililiter, tidak boleh
-          dibandingkan langsung tanpa informasi densitas.
-        </li>
-        <li>
-          Persentase anggaran tidak dihitung jika anggaran Rp0. Status
-          “mendekati batas” berlaku mulai 90% anggaran terpakai.
-        </li>
-        <li>
-          Data simulasi disimpan di perangkat ini dan dapat diekspor sebagai
-          backup.
-        </li>
-      </ul>
-    </section>
-
     <ConfirmDialog
-      v-model:open="resetOpen"
-      title="Reset form?"
-      message="Semua isian yang belum disimpan akan dikosongkan. Simulasi yang sudah tersimpan tidak dihapus."
-      confirm-label="Reset form"
+      v-if="deleteOpen"
+      :open="true"
+      :title="deleteOpen.isProduct ? 'Hapus produk?' : 'Hapus kebutuhan?'"
+      :message="
+        `Yakin ingin menghapus ${deleteOpen.name}? Data yang dihapus tidak dapat dikembalikan.`
+      "
+      confirm-label="Hapus"
+      cancel-label="Batal"
       tone="danger"
-      @confirm="resetForm"
+      @update:open="deleteOpen = null"
+      @confirm="confirmDelete"
     />
   </div>
 </template>

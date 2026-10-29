@@ -27,6 +27,14 @@ function requiresLogin(
   requireLogin: boolean,
 ): boolean {
   if (to.name === 'login') return false
+  // E2E bypass: saat variabel lingkungan diisi, abaikan wajib login agar
+  // tes dapat mengakses halaman terlindungi tanpa mengelola sesi Supabase.
+  if (
+    typeof import.meta.env.VITE_E2E_BYPASS_AUTH === 'string' &&
+    import.meta.env.VITE_E2E_BYPASS_AUTH.toLowerCase() === 'true'
+  ) {
+    return false
+  }
   return requireLogin || to.meta.requiresAuth === true
 }
 

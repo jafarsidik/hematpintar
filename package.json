@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
-    "pretest:e2e": "npm run build",
-    "test:e2e": "playwright test"
+    "pretest:e2e": "VITE_E2E_BYPASS_AUTH=true VITE_SUPABASE_URL=https://test.supabase.co VITE_SUPABASE_ANON_KEY=test-anon-key npm run build",
+    "test:e2e": "VITE_E2E_BYPASS_AUTH=true VITE_SUPABASE_URL=https://test.supabase.co VITE_SUPABASE_ANON_KEY=test-anon-key playwright test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

@@ -7,10 +7,50 @@ import type {
   SimulationRecord,
 } from './schemas'
 
+/** Cache Mirror Tabel Supabase untuk modul Hemat Rumah Tangga. */
+export interface CachedShoppingNeed {
+  id: string
+  user_id: string
+  name: string
+  target_qty: number | null
+  unit: string | null
+  chosen_product_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CachedSavedProduct {
+  id: string
+  user_id: string
+  need_id: string
+  title: string
+  platform: string
+  store_name: string | null
+  url: string
+  price: number
+  pack_size: number
+  pack_unit: string
+  shipping_cost: number
+  voucher_discount: number
+  note: string | null
+  price_checked_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CachedHouseholdBudget {
+  user_id: string
+  monthly_budget: number
+  updated_at: string
+}
+
 export class HematPintarDatabase extends Dexie {
   settings!: Table<SettingsRecord, string>
   simulations!: Table<SimulationRecord, string>
   products!: Table<ProductRecord, string>
+  householdNeeds!: Table<CachedShoppingNeed, string>
+  householdProducts!: Table<CachedSavedProduct, string>
+  householdBudgetsCache!: Table<CachedHouseholdBudget, string>
 
   constructor(name = 'hematpintar') {
     super(name)
@@ -18,6 +58,14 @@ export class HematPintarDatabase extends Dexie {
       settings: 'id',
       simulations: 'id, moduleType, updatedAt, createdAt',
       products: 'id, category, updatedAt',
+    })
+    this.version(2).stores({
+      settings: 'id',
+      simulations: 'id, moduleType, updatedAt, createdAt',
+      products: 'id, category, updatedAt',
+      householdNeeds: 'id, user_id, updated_at',
+      householdProducts: 'id, user_id, need_id, updated_at',
+      householdBudgetsCache: 'user_id',
     })
   }
 }

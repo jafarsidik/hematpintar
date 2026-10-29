@@ -15,6 +15,7 @@ const router = createRouter({
       path: '/rumah-tangga',
       name: 'household',
       component: () => import('@/views/HouseholdView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/margin-rescue',

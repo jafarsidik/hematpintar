@@ -1,16 +1,48 @@
 import { describe, expect, it } from 'vitest'
 import {
   BATAS_MENDEKATI_ANGGARAN,
+  hargaEfektifProduk,
+  hargaPerSatuanProduk,
   hargaPerSatuanStandar,
   hargaPerSatuanStandarDetail,
   penghematan,
   persenAnggaranTerpakai,
+  rankingProduk,
   satuanStandar,
+  selisihHematDariTermurah,
   sisaAnggaran,
   statusAnggaran,
+  statusKesegaranHarga,
   totalBelanja,
 } from './household'
 import { expectErr, expectOk } from './test-helpers'
+
+const berasA = {
+  nama: 'Beras A',
+  harga: 68_000,
+  ongkir: 10_000,
+  voucher: 3_000,
+  isi: 5,
+  satuan: 'kg' as const,
+}
+
+const berasB = {
+  nama: 'Beras B',
+  harga: 62_000,
+  ongkir: 18_000,
+  voucher: 0,
+  isi: 5,
+  satuan: 'kg' as const,
+}
+
+const berasC = {
+  nama: 'Beras C',
+  harga: 25_000,
+  ongkir: 8_000,
+  voucher: 0,
+  isi: 2,
+  satuan: 'kg' as const,
+}
 
 describe('totalBelanja', () => {
   it('menjumlahkan jumlah dikali harga satuan', () => {
@@ -301,5 +333,357 @@ describe('contoh Hemat Rumah Tangga', () => {
     )
     expect(unit.harga).toBe(24_000)
     expect(unit.satuan).toBe('kg')
+  })
+})
+
+describe('hargaEfektifProduk', () => {
+  it('menjumlahkan harga dan ongkir lalu mengurangi voucher', () => {
+    expect(
+      expectOk(
+        hargaEfektifProduk({
+          harga: 68_000,
+          ongkir: 10_000,
+          voucher: 3_000,
+        }),
+      ),
+    ).toBe(75_000)
+  })
+
+  it('menganggap ongkir dan voucher nol bila tidak diisi', () => {
+    expect(expectOk(hargaEfektifProduk({ harga: 68_000 }))).toBe(68_000)
+  })
+
+  it('menolak voucher yang melebihi harga tambah ongkir', () => {
+    expectErr(
+      hargaEfektifProduk({
+        harga: 68_000,
+        ongkir: 10_000,
+        voucher: 100_000,
+      }),
+      'VOUCHER_MELEBIHI_TOTAL',
+    )
+  })
+
+  it('menolak harga, ongkir, atau voucher negatif', () => {
+    expectErr(
+      hargaEfektifProduk({ harga: -1, ongkir: 0, voucher: 0 }),
+      'NOMINAL_NEGATIF',
+    )
+    expectErr(
+      hargaEfektifProduk({ harga: 68_000, ongkir: -1, voucher: 0 }),
+      'NOMINAL_NEGATIF',
+    )
+    expectErr(
+      hargaEfektifProduk({ harga: 68_000, ongkir: 0, voucher: -1 }),
+      'NOMINAL_NEGATIF',
+    )
+  })
+
+  it('menolak nilai tidak finite', () => {
+    expectErr(
+      hargaEfektifProduk({ harga: Number.NaN, ongkir: 0, voucher: 0 }),
+      'BUKAN_ANGKA',
+    )
+    expectErr(
+      hargaEfektifProduk({
+        harga: 68_000,
+        ongkir: Number.POSITIVE_INFINITY,
+        voucher: 0,
+      }),
+      'BUKAN_ANGKA',
+    )
+  })
+})
+
+describe('hargaPerSatuanProduk', () => {
+  it('menghitung harga per kg dari isi kilogram', () => {
+    expect(
+      expectOk(
+        hargaPerSatuanProduk({
+          hargaEfektif: 75_000,
+          isi: 5,
+          satuan: 'kg',
+        }),
+      ),
+    ).toBe(15_000)
+  })
+
+  it('mengonversi gram ke kilogram', () => {
+    expect(
+      expectOk(
+        hargaPerSatuanProduk({
+          hargaEfektif: 18_000,
+          isi: 750,
+          satuan: 'g',
+        }),
+      ),
+    ).toBe(24_000)
+  })
+
+  it('mengonversi mililiter ke liter', () => {
+    expect(
+      expectOk(
+        hargaPerSatuanProduk({
+          hargaEfektif: 18_000,
+          isi: 1_500,
+          satuan: 'ml',
+        }),
+      ),
+    ).toBe(12_000)
+  })
+
+  it('memakai pcs apa adanya', () => {
+    expect(
+      expectOk(
+        hargaPerSatuanProduk({
+          hargaEfektif: 10_000,
+          isi: 2,
+          satuan: 'pcs',
+        }),
+      ),
+    ).toBe(5_000)
+  })
+
+  it('menolak isi nol atau negatif', () => {
+    expectErr(
+      hargaPerSatuanProduk({
+        hargaEfektif: 75_000,
+        isi: 0,
+        satuan: 'kg',
+      }),
+      'KUANTITAS_TIDAK_POSITIF',
+    )
+    expectErr(
+      hargaPerSatuanProduk({
+        hargaEfektif: 75_000,
+        isi: -1,
+        satuan: 'kg',
+      }),
+      'KUANTITAS_TIDAK_POSITIF',
+    )
+  })
+
+  it('menolak harga efektif negatif atau tidak finite', () => {
+    expectErr(
+      hargaPerSatuanProduk({
+        hargaEfektif: -1,
+        isi: 5,
+        satuan: 'kg',
+      }),
+      'NOMINAL_NEGATIF',
+    )
+    expectErr(
+      hargaPerSatuanProduk({
+        hargaEfektif: Number.POSITIVE_INFINITY,
+        isi: 5,
+        satuan: 'kg',
+      }),
+      'BUKAN_ANGKA',
+    )
+  })
+})
+
+describe('rankingProduk', () => {
+  it('mengurutkan dengan ongkir dan voucher dari harga per satuan termurah', () => {
+    const hasil = expectOk(rankingProduk([berasA, berasB, berasC]))
+
+    expect(hasil.map((produk) => produk.nama)).toEqual([
+      'Beras A',
+      'Beras B',
+      'Beras C',
+    ])
+    expect(hasil.map((produk) => produk.hargaEfektif)).toEqual([
+      75_000, 80_000, 33_000,
+    ])
+    expect(hasil.map((produk) => produk.hargaPerSatuan)).toEqual([
+      15_000, 16_000, 16_500,
+    ])
+    expect(hasil.every((produk) => !produk.seri)).toBe(true)
+  })
+
+  it('mengurutkan tanpa ongkir dan voucher berdasarkan harga per kg', () => {
+    const hasil = expectOk(
+      rankingProduk([
+        { ...berasA, ongkir: 0, voucher: 0 },
+        { ...berasB, ongkir: 0, voucher: 0 },
+        { ...berasC, ongkir: 0, voucher: 0 },
+      ]),
+    )
+
+    expect(hasil.map((produk) => produk.nama)).toEqual([
+      'Beras B',
+      'Beras C',
+      'Beras A',
+    ])
+    expect(hasil.map((produk) => produk.hargaPerSatuan)).toEqual([
+      12_400, 12_500, 13_600,
+    ])
+  })
+
+  it('menolak perbandingan massa dan volume', () => {
+    const hasil = rankingProduk([
+      berasA,
+      {
+        nama: 'Minyak',
+        harga: 30_000,
+        isi: 2,
+        satuan: 'l' as const,
+      },
+    ])
+
+    expect(hasil.ok).toBe(false)
+    if (hasil.ok) return
+    expect(hasil.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'SATUAN_TIDAK_SEBANDING',
+        message: 'satuan tidak bisa dibandingkan',
+      }),
+    )
+  })
+
+  it('menandai harga per satuan sama sebagai seri tanpa mengubah urutan', () => {
+    const hasil = expectOk(
+      rankingProduk([
+        { nama: 'Beras A', harga: 75_000, isi: 5, satuan: 'kg' as const },
+        { nama: 'Beras B', harga: 60_000, isi: 4, satuan: 'kg' as const },
+        { nama: 'Beras C', harga: 90_000, isi: 6, satuan: 'kg' as const },
+        { nama: 'Beras D', harga: 80_000, isi: 5, satuan: 'kg' as const },
+      ]),
+    )
+
+    expect(hasil.map((produk) => produk.nama)).toEqual([
+      'Beras A',
+      'Beras B',
+      'Beras C',
+      'Beras D',
+    ])
+    expect(hasil.map((produk) => produk.seri)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ])
+  })
+
+  it('menyamakan harga per satuan setelah konversi gram ke kg', () => {
+    const hasil = expectOk(
+      rankingProduk([
+        {
+          nama: 'Kemasan 5 kg',
+          harga: 75_000,
+          isi: 5,
+          satuan: 'kg' as const,
+        },
+        {
+          nama: 'Kemasan 5000 g',
+          harga: 75_000,
+          isi: 5_000,
+          satuan: 'g' as const,
+        },
+      ]),
+    )
+
+    expect(hasil.map((produk) => produk.hargaPerSatuan)).toEqual([
+      15_000, 15_000,
+    ])
+    expect(hasil.map((produk) => produk.seri)).toEqual([true, true])
+  })
+
+  it('meneruskan error voucher berlebih', () => {
+    expectErr(
+      rankingProduk([
+        {
+          nama: 'Beras',
+          harga: 68_000,
+          ongkir: 10_000,
+          voucher: 100_000,
+          isi: 5,
+          satuan: 'kg' as const,
+        },
+      ]),
+      'VOUCHER_MELEBIHI_TOTAL',
+    )
+  })
+})
+
+describe('selisihHematDariTermurah', () => {
+  it('menghitung selisih harga efektif A terhadap B', () => {
+    expect(expectOk(selisihHematDariTermurah(berasA, berasB))).toBe(5_000)
+  })
+
+  it('tidak bergantung pada urutan argumen', () => {
+    expect(expectOk(selisihHematDariTermurah(berasB, berasA))).toBe(5_000)
+  })
+
+  it('meneruskan error voucher berlebih', () => {
+    expectErr(
+      selisihHematDariTermurah(
+        {
+          harga: 68_000,
+          ongkir: 10_000,
+          voucher: 100_000,
+        },
+        berasA,
+      ),
+      'VOUCHER_MELEBIHI_TOTAL',
+    )
+  })
+})
+
+describe('statusKesegaranHarga', () => {
+  const sekarang = new Date('2026-10-29T12:00:00.000Z')
+
+  it('segar untuk harga yang dicek hari ini', () => {
+    expect(
+      statusKesegaranHarga(
+        new Date('2026-10-29T00:00:00.000Z'),
+        sekarang,
+      ),
+    ).toBe('segar')
+  })
+
+  it('segar tepat pada batas 7 hari', () => {
+    expect(
+      statusKesegaranHarga(
+        new Date('2026-10-22T12:00:00.000Z'),
+        sekarang,
+      ),
+    ).toBe('segar')
+  })
+
+  it('lama bila melewati batas 7 hari', () => {
+    expect(
+      statusKesegaranHarga(
+        new Date('2026-10-22T11:59:59.999Z'),
+        sekarang,
+      ),
+    ).toBe('lama')
+  })
+
+  it('menerima string ISO', () => {
+    expect(
+      statusKesegaranHarga('2026-10-01T00:00:00.000Z', sekarang),
+    ).toBe('lama')
+  })
+
+  it('memakai batas hari kustom', () => {
+    expect(
+      statusKesegaranHarga(
+        '2026-10-28T12:00:00.000Z',
+        sekarang,
+        1,
+      ),
+    ).toBe('segar')
+    expect(
+      statusKesegaranHarga(
+        '2026-10-28T11:59:59.999Z',
+        sekarang,
+        1,
+      ),
+    ).toBe('lama')
+  })
+
+  it('menganggap tanggal tidak valid sebagai lama', () => {
+    expect(statusKesegaranHarga('bukan tanggal', sekarang)).toBe('lama')
   })
 })

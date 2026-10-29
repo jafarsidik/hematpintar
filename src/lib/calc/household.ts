@@ -1,6 +1,6 @@
 import { fromErrors, isFiniteNumber, nonNegativeMoney, positiveQty } from './validation'
-import type { Result, ValidationError } from './result'
-import type { Satuan } from './unit-conversion'
+import { fail, ok, type Result, type ValidationError } from './result'
+import { convertUnit, dimensiSatuan, type Satuan } from './unit-conversion'
 
 export interface BelanjaItem {
   jumlah: number
@@ -152,4 +152,272 @@ export function penghematan(
     ],
     () => baseline - alternatif,
   )
+}
+
+export interface HargaEfektifInput {
+  harga: number
+  ongkir?: number
+  voucher?: number
+}
+
+/**
+ * Harga efektif total satu produk: harga + ongkir - voucher.
+ * Ongkir dan voucher yang tidak diisi dianggap nol. Voucher tidak boleh
+ * melebihi harga ditambah ongkir.
+ */
+export function hargaEfektifProduk(
+  produk: HargaEfektifInput,
+): Result<number> {
+  const ongkir = produk.ongkir ?? 0
+  const voucher = produk.voucher ?? 0
+  const errors: (ValidationError | null)[] = [
+    nonNegativeMoney('harga', produk.harga),
+    nonNegativeMoney('ongkir', ongkir),
+    nonNegativeMoney('voucher', voucher),
+  ]
+
+  const adaError = errors.some((error) => error !== null)
+  if (!adaError) {
+    const subtotal = produk.harga + ongkir
+    if (!isFiniteNumber(subtotal)) {
+      errors.push({
+        field: 'harga',
+        code: 'BUKAN_ANGKA',
+        message:
+          'harga ditambah ongkir harus berupa angka yang valid; periksa kembali isian Anda.',
+      })
+    } else if (voucher > subtotal) {
+      errors.push({
+        field: 'voucher',
+        code: 'VOUCHER_MELEBIHI_TOTAL',
+        message: 'voucher tidak boleh melebihi harga ditambah ongkir.',
+      })
+    }
+  }
+
+  return fromErrors(errors, () => produk.harga + ongkir - voucher)
+}
+
+export interface HargaPerSatuanProdukInput {
+  hargaEfektif: number
+  isi: number
+  satuan: Satuan
+}
+
+/**
+ * Harga efektif per satuan standar: massa per kg, volume per liter,
+ * jumlah per pcs. Isi harus lebih besar dari nol.
+ */
+export function hargaPerSatuanProduk(
+  produk: HargaPerSatuanProdukInput,
+): Result<number> {
+  const errors = [
+    nonNegativeMoney('hargaEfektif', produk.hargaEfektif),
+    positiveQty('isi', produk.isi),
+  ].filter((error): error is ValidationError => error !== null)
+
+  if (errors.length > 0) return fail(errors)
+
+  const isiStandar = convertUnit(
+    produk.isi,
+    produk.satuan,
+    satuanStandar(produk.satuan),
+  )
+  if (!isiStandar.ok) return fail(isiStandar.errors)
+
+  const hargaPerSatuan = produk.hargaEfektif / isiStandar.value
+  if (!isFiniteNumber(hargaPerSatuan)) {
+    return fail({
+      field: 'hargaPerSatuan',
+      code: 'BUKAN_ANGKA',
+      message:
+        'harga per satuan harus berupa angka yang valid; periksa kembali isian Anda.',
+    })
+  }
+
+  return ok(hargaPerSatuan)
+}
+
+export interface ProdukHargaDasar {
+  harga: number
+  ongkir?: number
+  voucher?: number
+  isi: number
+  satuan: Satuan
+}
+
+export type ProdukRanking<T extends ProdukHargaDasar> = T & {
+  hargaEfektif: number
+  hargaPerSatuan: number
+  satuanStandar: SatuanStandar
+  /** True bila ada produk lain dengan harga per satuan yang sama. */
+  seri: boolean
+}
+
+/**
+ * Mengurutkan produk dari harga per satuan termurah. Semua produk wajib
+ * memakai dimensi satuan yang sama; massa, volume, dan jumlah tidak
+ * dipaksakan untuk dibandingkan. Produk dengan harga per satuan sama
+ * mempertahankan urutan masukan dan ditandai sebagai seri.
+ */
+export function rankingProduk<T extends ProdukHargaDasar>(
+  daftar: readonly T[],
+): Result<ProdukRanking<T>[]> {
+  const pertama = daftar[0]
+  if (pertama) {
+    const dimensi = dimensiSatuan(pertama.satuan)
+    const adaDimensiLain = daftar.some(
+      (produk) => dimensiSatuan(produk.satuan) !== dimensi,
+    )
+    if (adaDimensiLain) {
+      return fail({
+        field: 'satuan',
+        code: 'SATUAN_TIDAK_SEBANDING',
+        message: 'satuan tidak bisa dibandingkan',
+      })
+    }
+  }
+
+  const errors: ValidationError[] = []
+  const dihitung: ProdukRanking<T>[] = []
+
+  daftar.forEach((produk, indeks) => {
+    const efektif = hargaEfektifProduk(produk)
+    if (!efektif.ok) {
+      for (const error of efektif.errors) {
+        errors.push({
+          ...error,
+          field: `daftar[${indeks}].${error.field}`,
+        })
+      }
+      return
+    }
+
+    const perSatuan = hargaPerSatuanProduk({
+      hargaEfektif: efektif.value,
+      isi: produk.isi,
+      satuan: produk.satuan,
+    })
+    if (!perSatuan.ok) {
+      for (const error of perSatuan.errors) {
+        errors.push({
+          ...error,
+          field: `daftar[${indeks}].${error.field}`,
+        })
+      }
+      return
+    }
+
+    dihitung.push({
+      ...produk,
+      hargaEfektif: efektif.value,
+      hargaPerSatuan: perSatuan.value,
+      satuanStandar: satuanStandar(produk.satuan),
+      seri: false,
+    })
+  })
+
+  if (errors.length > 0) return fail(errors)
+
+  const berurutan = dihitung
+    .map((produk, indeks) => ({ produk, indeks }))
+    .sort(
+      (a, b) =>
+        a.produk.hargaPerSatuan - b.produk.hargaPerSatuan ||
+        a.indeks - b.indeks,
+    )
+    .map((item) => item.produk)
+
+  let mulai = 0
+  while (mulai < berurutan.length) {
+    const acuan = berurutan[mulai]
+    if (!acuan) break
+
+    let akhir = mulai + 1
+    while (
+      akhir < berurutan.length &&
+      berurutan[akhir]?.hargaPerSatuan === acuan.hargaPerSatuan
+    ) {
+      akhir += 1
+    }
+
+    if (akhir - mulai > 1) {
+      for (let indeks = mulai; indeks < akhir; indeks += 1) {
+        const produk = berurutan[indeks]
+        if (produk) {
+          berurutan[indeks] = { ...produk, seri: true }
+        }
+      }
+    }
+
+    mulai = akhir
+  }
+
+  return ok(berurutan)
+}
+
+/**
+ * Selisih harga efektif total yang tidak bertanda. Contoh: Beras A
+ * Rp75.000 dan Beras B Rp80.000 menghasilkan Rp5.000.
+ */
+export function selisihHematDariTermurah(
+  produk: HargaEfektifInput,
+  termurah: HargaEfektifInput,
+): Result<number> {
+  const efektifProduk = hargaEfektifProduk(produk)
+  if (!efektifProduk.ok) {
+    return fail(
+      efektifProduk.errors.map((error) => ({
+        ...error,
+        field: `produk.${error.field}`,
+      })),
+    )
+  }
+
+  const efektifTermurah = hargaEfektifProduk(termurah)
+  if (!efektifTermurah.ok) {
+    return fail(
+      efektifTermurah.errors.map((error) => ({
+        ...error,
+        field: `termurah.${error.field}`,
+      })),
+    )
+  }
+
+  return ok(Math.abs(efektifProduk.value - efektifTermurah.value))
+}
+
+export type StatusKesegaranHarga = 'segar' | 'lama'
+
+const SATU_HARI_MS = 24 * 60 * 60 * 1_000
+
+/**
+ * Menentukan kesegaran harga. Harga dianggap segar bila selisih waktu
+ * tidak melebihi batas hari (default 7 hari). Tanggal tidak valid
+ * dianggap lama.
+ */
+export function statusKesegaranHarga(
+  tanggalDicek: Date | string,
+  sekarang: Date | string,
+  batasHari = 7,
+): StatusKesegaranHarga {
+  const dicek =
+    tanggalDicek instanceof Date
+      ? tanggalDicek.getTime()
+      : Date.parse(tanggalDicek)
+  const acuan =
+    sekarang instanceof Date ? sekarang.getTime() : Date.parse(sekarang)
+
+  if (
+    !isFiniteNumber(dicek) ||
+    !isFiniteNumber(acuan) ||
+    !isFiniteNumber(batasHari)
+  ) {
+    return 'lama'
+  }
+
+  const batas = Math.max(0, batasHari) * SATU_HARI_MS
+  if (!isFiniteNumber(batas)) return 'lama'
+
+  return acuan - dicek <= batas ? 'segar' : 'lama'
 }
