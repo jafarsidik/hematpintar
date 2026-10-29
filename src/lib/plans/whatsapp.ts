@@ -21,14 +21,15 @@ export function normalizeWhatsAppNumber(
   return digits.length >= 8 ? digits : null
 }
 
-export function buildWhatsAppMessage(plan: Plan, email: string): string {
+export function buildWhatsAppMessage(plan: Plan, username: string): string {
   const config = PLANS[plan]
-  const accountEmail = email.trim() === '' ? '(belum login)' : email.trim()
+  const accountUsername =
+    username.trim() === '' ? '(belum login)' : username.trim()
 
   return [
     'Halo HematPintar,',
     `Saya ingin membeli paket ${config.name} (${formatRupiah(config.price)}).`,
-    `Email akun: ${accountEmail}`,
+    `Username akun: ${accountUsername}`,
     'Mohon dibantu proses pembelian dan aktivasi manualnya.',
   ].join('\n')
 }

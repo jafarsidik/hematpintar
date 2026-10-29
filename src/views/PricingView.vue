@@ -56,7 +56,7 @@ function planFeatures(plan: PlanConfig): string[] {
 function whatsAppUrl(plan: Plan): string | null {
   return buildWhatsAppUrl(
     waNumber,
-    buildWhatsAppMessage(plan, authStore.email ?? ''),
+    buildWhatsAppMessage(plan, authStore.username ?? ''),
   )
 }
 
@@ -176,8 +176,8 @@ function trackUpgrade(): void {
             Pesan {{ plan.name }} via WhatsApp
           </a>
           <p class="mt-2 text-xs leading-relaxed text-slate-500">
-            Pesan otomatis berisi email akun dan paket yang dipilih. Aktivasi
-            dilakukan manual setelah pembayaran diverifikasi.
+            Pesan otomatis berisi username akun dan paket yang dipilih.
+            Aktivasi dilakukan manual setelah pembayaran diverifikasi.
           </p>
         </div>
       </section>
@@ -188,9 +188,9 @@ function trackUpgrade(): void {
         Cara membeli dan aktivasi
       </h2>
       <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-600">
-        <li>Masuk dengan email agar pesan berisi email akun yang benar.</li>
+        <li>Masuk dengan username agar pesan berisi username akun yang benar.</li>
         <li>
-          Pilih paket lalu tekan tombol WhatsApp. Pesan berisi email akun dan
+          Pilih paket lalu tekan tombol WhatsApp. Pesan berisi username akun dan
           paket yang dipilih; Anda masih dapat mengubahnya sebelum mengirim.
         </li>
         <li>

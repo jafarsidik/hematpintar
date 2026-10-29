@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+// Current pages keep their local-only functionality, so no route sets
+// meta.requiresAuth by default. Account-only routes can opt in later, or the
+// deployment can set VITE_REQUIRE_LOGIN=true to protect every page except login.
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [

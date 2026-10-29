@@ -129,7 +129,7 @@ function setConflictOpen(open: boolean): void {
     <div v-else class="mt-4 space-y-4">
       <p class="text-sm text-slate-600">
         Masuk sebagai
-        <strong class="font-medium text-slate-900">{{ authStore.email }}</strong>
+        <strong class="font-medium text-slate-900">{{ authStore.username }}</strong>
         dengan paket
         <strong class="font-medium text-slate-900">
           {{ entitlementStore.planLabel }}

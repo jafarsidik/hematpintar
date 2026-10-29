@@ -27,13 +27,6 @@ const planTone = computed(() =>
 )
 
 watch(
-  () => authStore.user?.id,
-  () => {
-    void entitlementStore.refresh()
-  },
-)
-
-watch(
   () => route.path,
   (path) => {
     const activeModule = MODULES.find((module) => module.path === path)

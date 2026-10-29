@@ -20,7 +20,8 @@ function createOptionalClient(): SupabaseClient | null {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        // Username/password only. There is no magic link or OTP flow.
+        detectSessionInUrl: false,
       },
     })
   } catch {

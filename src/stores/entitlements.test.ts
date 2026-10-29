@@ -1,16 +1,9 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const authState = vi.hoisted(() => ({
-  user: null as { id: string } | null,
-}))
+import type { Session } from '@supabase/supabase-js'
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
-}))
-
-vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => authState,
 }))
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -18,7 +11,26 @@ vi.mock('@/lib/supabase/client', () => ({
   isSupabaseConfigured: true,
 }))
 
-import { useEntitlementStore } from './entitlements'
+import { useAuthStore } from './auth'
+import { resolvePlan, useEntitlementStore } from './entitlements'
+
+const USER_ID = '11111111-1111-4111-8111-111111111111'
+
+const session = {
+  access_token: 'token',
+  refresh_token: 'refresh',
+  expires_in: 3600,
+  token_type: 'bearer',
+  user: {
+    id: USER_ID,
+    email: 'budi@contoh.test',
+    user_metadata: { username: 'budi' },
+  },
+} as unknown as Session
+
+function signInUser(): void {
+  useAuthStore().session = session
+}
 
 function mockEntitlement(
   data: { plan: string; valid_until: string | null } | null,
@@ -32,8 +44,19 @@ function mockEntitlement(
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  authState.user = null
   supabaseMock.from.mockReset()
+})
+
+describe('resolvePlan', () => {
+  it('mempertahankan free dan menurunkan plan kedaluwarsa', () => {
+    expect(resolvePlan('free', null)).toBe('free')
+    expect(resolvePlan('plus', null)).toBe('plus')
+    expect(resolvePlan('plus', '2000-01-01T00:00:00.000Z')).toBe('free')
+    expect(resolvePlan('business', '2999-01-01T00:00:00.000Z')).toBe(
+      'business',
+    )
+    expect(resolvePlan('unknown', '2999-01-01T00:00:00.000Z')).toBe('free')
+  })
 })
 
 describe('entitlement store', () => {
@@ -48,7 +71,7 @@ describe('entitlement store', () => {
   })
 
   it('menurunkan plan kedaluwarsa menjadi free', async () => {
-    authState.user = { id: '11111111-1111-4111-8111-111111111111' }
+    signInUser()
     const chain = mockEntitlement({
       plan: 'plus',
       valid_until: '2000-01-01T00:00:00.000Z',
@@ -57,16 +80,13 @@ describe('entitlement store', () => {
     const store = useEntitlementStore()
     await store.refresh()
 
-    expect(chain.eq).toHaveBeenCalledWith(
-      'user_id',
-      '11111111-1111-4111-8111-111111111111',
-    )
+    expect(chain.eq).toHaveBeenCalledWith('user_id', USER_ID)
     expect(store.plan).toBe('free')
     expect(store.isPremium).toBe(false)
   })
 
   it('memakai plan plus yang masih aktif', async () => {
-    authState.user = { id: '11111111-1111-4111-8111-111111111111' }
+    signInUser()
     mockEntitlement({
       plan: 'plus',
       valid_until: '2999-12-31T23:59:59.000Z',
@@ -81,7 +101,7 @@ describe('entitlement store', () => {
   })
 
   it('memakai plan business yang masih aktif', async () => {
-    authState.user = { id: '11111111-1111-4111-8111-111111111111' }
+    signInUser()
     mockEntitlement({
       plan: 'business',
       valid_until: '2999-12-31T23:59:59.000Z',
@@ -95,17 +115,18 @@ describe('entitlement store', () => {
   })
 
   it('kembali ke free saat pengguna keluar', async () => {
-    authState.user = { id: '11111111-1111-4111-8111-111111111111' }
+    signInUser()
     mockEntitlement({
       plan: 'plus',
       valid_until: '2999-12-31T23:59:59.000Z',
     })
-
+    const authStore = useAuthStore()
     const store = useEntitlementStore()
+
     await store.refresh()
     expect(store.plan).toBe('plus')
 
-    authState.user = null
+    authStore.session = null
     await store.refresh()
 
     expect(store.plan).toBe('free')
@@ -114,7 +135,7 @@ describe('entitlement store', () => {
   })
 
   it('memakai free bila baris entitlement tidak ditemukan', async () => {
-    authState.user = { id: '11111111-1111-4111-8111-111111111111' }
+    signInUser()
     mockEntitlement(null)
 
     const store = useEntitlementStore()

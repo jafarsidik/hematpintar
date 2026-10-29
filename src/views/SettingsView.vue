@@ -16,6 +16,7 @@ import { errorMessage } from '@/lib/storage/errors'
 import type { BackupData } from '@/lib/storage/schemas'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useAuthStore } from '@/stores/auth'
+import { useEntitlementStore } from '@/stores/entitlements'
 import { useSimulationStore } from '@/stores/simulations'
 import { useToastStore } from '@/stores/toast'
 
@@ -28,6 +29,7 @@ interface PendingImport {
 const simulationStore = useSimulationStore()
 const toastStore = useToastStore()
 const authStore = useAuthStore()
+const entitlementStore = useEntitlementStore()
 const analyticsStore = useAnalyticsStore()
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -35,6 +37,23 @@ const pendingImport = ref<PendingImport | null>(null)
 const importError = ref<string | null>(null)
 const deleteOpen = ref(false)
 const busy = ref(false)
+
+const currentPassword = ref('')
+const newPassword = ref('')
+const confirmNewPassword = ref('')
+const showAccountPassword = ref(false)
+const accountErrorLocal = ref<string | null>(null)
+const accountSuccess = ref<string | null>(null)
+
+const accountPasswordType = computed(() =>
+  showAccountPassword.value ? 'text' : 'password',
+)
+const accountError = computed(
+  () => accountErrorLocal.value ?? authStore.error,
+)
+const accountPlanTone = computed(() =>
+  entitlementStore.isPremium ? ('success' as const) : ('neutral' as const),
+)
 
 const importOpen = computed({
   get: () => pendingImport.value !== null,
@@ -139,6 +158,43 @@ async function confirmImport(): Promise<void> {
   )
 }
 
+function clearAccountMessages(): void {
+  authStore.clearError()
+  accountErrorLocal.value = null
+  accountSuccess.value = null
+}
+
+async function submitChangePassword(): Promise<void> {
+  clearAccountMessages()
+
+  if (newPassword.value !== confirmNewPassword.value) {
+    accountErrorLocal.value = 'Konfirmasi password baru tidak cocok.'
+    return
+  }
+
+  const success = await authStore.changePassword(
+    currentPassword.value,
+    newPassword.value,
+  )
+
+  if (!success) return
+
+  currentPassword.value = ''
+  newPassword.value = ''
+  confirmNewPassword.value = ''
+  showAccountPassword.value = false
+  accountSuccess.value = 'Password berhasil diubah.'
+}
+
+async function logout(): Promise<void> {
+  clearAccountMessages()
+
+  if (await authStore.signOut()) {
+    accountSuccess.value = 'Anda sudah keluar dari akun.'
+    return
+  }
+}
+
 function onAnalyticsConsentChange(event: Event): void {
   const input = event.target as HTMLInputElement
   analyticsStore.setConsent(input.checked)
@@ -169,13 +225,175 @@ async function confirmDeleteAll(): Promise<void> {
         <StatusBadge label="Data lokal" tone="info" />
       </div>
       <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-        Pengaturan data
+        Pengaturan
       </h1>
       <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-        Unduh backup, pulihkan data, atau hapus seluruh data yang tersimpan di
-        perangkat ini.
+        Kelola akun, backup, analitik, dan data yang tersimpan di perangkat ini.
       </p>
     </header>
+
+    <section class="card p-5" aria-labelledby="judul-akun">
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 id="judul-akun" class="text-base font-semibold text-slate-900">
+          Akun
+        </h2>
+        <StatusBadge
+          v-if="isSupabaseConfigured && authStore.isAuthenticated"
+          :label="
+            entitlementStore.loading
+              ? 'Memuat paket...'
+              : entitlementStore.planLabel
+          "
+          :tone="accountPlanTone"
+        />
+        <StatusBadge v-else label="Opsional" tone="neutral" />
+      </div>
+
+      <div
+        v-if="!isSupabaseConfigured"
+        class="mt-3 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm leading-relaxed text-warning-700"
+        role="status"
+      >
+        Login belum tersedia karena Supabase belum dikonfigurasi. Aplikasi tetap
+        berjalan dan data tersimpan di perangkat ini.
+      </div>
+
+      <template v-else-if="!authStore.isAuthenticated">
+        <p class="mt-3 text-sm leading-relaxed text-slate-600">
+          Belum masuk. Login memakai username dan password, tanpa email atau
+          OTP. Login bersifat opsional.
+        </p>
+        <RouterLink to="/login" class="btn btn-secondary mt-3">
+          Masuk / Daftar
+        </RouterLink>
+      </template>
+
+      <template v-else>
+        <p class="mt-3 text-sm text-slate-600">
+          Masuk sebagai
+          <strong class="font-medium text-slate-900">
+            {{ authStore.username }}
+          </strong>
+          dengan paket
+          <strong class="font-medium text-slate-900">
+            {{ entitlementStore.planLabel }}
+          </strong>.
+        </p>
+
+        <p
+          v-if="entitlementStore.error"
+          class="mt-3 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm text-warning-700"
+          role="status"
+        >
+          {{ entitlementStore.error }}
+        </p>
+
+        <form class="mt-4 space-y-4" @submit.prevent="submitChangePassword">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="current-password" class="label-base">
+                Password saat ini
+                <span class="text-error-600" aria-hidden="true">*</span>
+              </label>
+              <input
+                id="current-password"
+                v-model="currentPassword"
+                :type="accountPasswordType"
+                class="input-base"
+                autocomplete="current-password"
+                required
+                :disabled="authStore.submitting"
+                @input="clearAccountMessages"
+              />
+            </div>
+            <div>
+              <label for="new-password" class="label-base">
+                Password baru
+                <span class="text-error-600" aria-hidden="true">*</span>
+              </label>
+              <input
+                id="new-password"
+                v-model="newPassword"
+                :type="accountPasswordType"
+                class="input-base"
+                autocomplete="new-password"
+                placeholder="Minimal 8 karakter"
+                required
+                :disabled="authStore.submitting"
+                @input="clearAccountMessages"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label for="confirm-new-password" class="label-base">
+              Ulangi password baru
+              <span class="text-error-600" aria-hidden="true">*</span>
+            </label>
+            <input
+              id="confirm-new-password"
+              v-model="confirmNewPassword"
+              :type="accountPasswordType"
+              class="input-base"
+              autocomplete="new-password"
+              required
+              :disabled="authStore.submitting"
+              @input="clearAccountMessages"
+            />
+          </div>
+
+          <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+            <input
+              v-model="showAccountPassword"
+              type="checkbox"
+              class="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+            />
+            Tampilkan password
+          </label>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="authStore.submitting"
+            >
+              {{ authStore.submitting ? 'Memproses...' : 'Ganti password' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost"
+              :disabled="authStore.submitting"
+              @click="logout"
+            >
+              {{ authStore.submitting ? 'Memproses...' : 'Keluar' }}
+            </button>
+          </div>
+        </form>
+      </template>
+
+      <p
+        v-if="accountError"
+        class="mt-3 rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700"
+        role="alert"
+      >
+        {{ accountError }}
+      </p>
+      <p
+        v-if="accountSuccess"
+        class="mt-3 rounded-lg border border-success-200 bg-success-50 p-3 text-sm text-success-700"
+        role="status"
+      >
+        {{ accountSuccess }}
+      </p>
+
+      <p
+        v-if="isSupabaseConfigured"
+        class="mt-4 text-xs leading-relaxed text-slate-500"
+      >
+        Jika lupa password, hubungi admin untuk reset. Tidak ada pengiriman
+        email reset otomatis.
+      </p>
+    </section>
 
     <p
       v-if="importError"

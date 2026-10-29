@@ -20,33 +20,39 @@ describe('nomor WhatsApp', () => {
 })
 
 describe('pesan pembelian manual', () => {
-  it('memuat paket dan email akun pengguna', () => {
-    const message = buildWhatsAppMessage('plus', 'nama@email.com')
+  it('memuat paket dan username akun pengguna', () => {
+    const message = buildWhatsAppMessage('plus', 'budi_01')
 
     expect(message).toContain('paket Plus')
     expect(message).toContain('39.000')
-    expect(message).toContain('Email akun: nama@email.com')
+    expect(message).toContain('Username akun: budi_01')
     expect(message).not.toContain('pembayaran berhasil')
   })
 
   it('memuat paket Bisnis yang dipilih', () => {
-    const message = buildWhatsAppMessage('business', 'usaha@email.com')
+    const message = buildWhatsAppMessage('business', 'usaha_01')
 
     expect(message).toContain('paket Bisnis')
     expect(message).toContain('99.000')
-    expect(message).toContain('Email akun: usaha@email.com')
+    expect(message).toContain('Username akun: usaha_01')
+  })
+
+  it('menandai pesan yang dibuat tanpa login', () => {
+    const message = buildWhatsAppMessage('plus', '   ')
+
+    expect(message).toContain('Username akun: (belum login)')
   })
 
   it('membuat tautan wa.me dengan pesan ter-encode', () => {
     const url = buildWhatsAppUrl(
       '0812-3456-7890',
-      buildWhatsAppMessage('plus', 'nama@email.com'),
+      buildWhatsAppMessage('plus', 'budi_01'),
     )
 
     expect(url).not.toBeNull()
     expect(url).toContain('https://wa.me/6281234567890?text=')
     expect(url).toContain('Plus')
-    expect(url).toContain('nama%40email.com')
+    expect(url).toContain('budi_01')
     expect(url).not.toContain('\n')
   })
 
