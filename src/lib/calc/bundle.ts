@@ -133,6 +133,55 @@ export function labaPaket(
   )
 }
 
+/**
+ * M = laba paket / harga paket. Dikembalikan sebagai pecahan desimal.
+ * Laba boleh negatif (rugi), tetapi harga paket harus lebih dari 0.
+ */
+export function marginPaket(
+  laba: number,
+  hargaPaket: number,
+): Result<number> {
+  if (!isFiniteNumber(laba)) {
+    return fail({
+      field: 'laba',
+      code: 'BUKAN_ANGKA',
+      message: 'laba harus berupa angka yang valid; periksa kembali isian Anda.',
+    })
+  }
+
+  const hargaError = nonNegativeMoney('hargaPaket', hargaPaket)
+  if (hargaError) return fail(hargaError)
+
+  if (hargaPaket === 0) {
+    return fail({
+      field: 'hargaPaket',
+      code: 'HARGA_PAKET_NOL',
+      message:
+        'Margin paket tidak dapat dihitung karena harga paket nol; isi harga paket lebih dari 0.',
+    })
+  }
+
+  return ok(laba / hargaPaket)
+}
+
+/**
+ * Total biaya yang harus ditutup paket: biaya item + kemasan paket +
+ * biaya penjualan variabel. Dipisahkan dari biaya paket agar biaya
+ * penjualan tidak dihitung dua kali.
+ */
+export function totalBiayaRelevanPaket(
+  biayaTotalPaket: number,
+  biayaVariabelPenjualan = 0,
+): Result<number> {
+  return fromErrors(
+    [
+      nonNegativeMoney('biayaTotalPaket', biayaTotalPaket),
+      nonNegativeMoney('biayaVariabelPenjualan', biayaVariabelPenjualan),
+    ],
+    () => biayaTotalPaket + biayaVariabelPenjualan,
+  )
+}
+
 export function hargaMinimum(
   biayaTotal: number,
   target: number,

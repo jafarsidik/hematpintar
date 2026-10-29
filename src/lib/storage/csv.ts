@@ -4,7 +4,13 @@ import { simulationSchema } from './schemas'
 const BASE_HEADERS = ['ID', 'Nama', 'Dibuat', 'Diperbarui'] as const
 
 const MODULE_HEADERS: Record<ModuleType, readonly string[]> = {
-  household: ['Anggaran', 'Jumlah Item', 'Catatan', 'Daftar Item'],
+  household: [
+    'Anggaran',
+    'Jumlah Item',
+    'Catatan',
+    'Daftar Item',
+    'Cek Harga Satuan',
+  ],
   margin: [
     'Produk',
     'Batch Yield',
@@ -56,6 +62,12 @@ function householdCells(payload: {
   budget: number
   items: { nama: string; kuantitas: number; satuan: string; harga: number }[]
   notes: string
+  unitPriceCheck?: {
+    nama?: string
+    hargaKemasan: number
+    isiKemasan: number
+    satuan: string
+  }
 }): string[] {
   return [
     String(payload.budget),
@@ -67,6 +79,9 @@ function householdCells(payload: {
           `${item.nama} ${item.kuantitas} ${item.satuan} @ ${item.harga}`,
       )
       .join('; '),
+    payload.unitPriceCheck
+      ? `${payload.unitPriceCheck.nama ?? 'Kemasan'} ${payload.unitPriceCheck.hargaKemasan}/${payload.unitPriceCheck.isiKemasan} ${payload.unitPriceCheck.satuan}`
+      : '',
   ]
 }
 

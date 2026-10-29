@@ -64,14 +64,10 @@ function startRename(simulation: SimulationRecord): void {
 }
 
 function editSimulation(simulation: SimulationRecord): void {
-  if (simulation.moduleType === 'margin') {
-    void router.push({
-      path: '/margin-rescue',
-      query: { simulation: simulation.id },
-    })
-    return
-  }
-  startRename(simulation)
+  void router.push({
+    path: moduleInfo(simulation.moduleType).path,
+    query: { simulation: simulation.id },
+  })
 }
 
 async function saveRename(): Promise<void> {
@@ -142,9 +138,8 @@ function exportCsv(): void {
           Semua simulasi
         </h1>
         <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Buka simulasi Margin Rescue untuk mengedit perhitungan, edit nama
-          simulasi lain, duplikasi, atau hapus data di perangkat ini. Ekspor CSV
-          tersedia per modul.
+          Buka simulasi untuk mengedit perhitungan, ubah nama, duplikasi, atau
+          hapus data di perangkat ini. Ekspor CSV tersedia per modul.
         </p>
       </div>
 
@@ -265,7 +260,14 @@ function exportCsv(): void {
               class="btn btn-secondary"
               @click="editSimulation(simulation)"
             >
-              {{ simulation.moduleType === 'margin' ? 'Edit' : 'Edit nama' }}
+              Edit
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="startRename(simulation)"
+            >
+              Ubah nama
             </button>
             <button
               type="button"

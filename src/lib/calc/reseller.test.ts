@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   biayaIklanPerPesanan,
   biayaPlatform,
+  estimasiLabaVolume,
   labaPerPesanan,
   marginReseller,
   pendapatanBersih,
   perbandinganProduk,
+  ringkasanBiayaReseller,
+  statusLabaReseller,
 } from './reseller'
 import { expectErr, expectOk } from './test-helpers'
 
@@ -216,6 +219,122 @@ describe('perbandinganProduk', () => {
     expectErr(
       perbandinganProduk([{ nama: 'A', labaPerUnit: 1_000, volume: -1 }]),
       'NOMINAL_NEGATIF',
+    )
+  })
+})
+
+describe('ringkasanBiayaReseller', () => {
+  const contoh = {
+    hargaJual: 150_000,
+    diskon: 10_000,
+    refund: 0,
+    biayaBarang: 80_000,
+    tarifPlatform: 0.08,
+    dasarKomisi: 'harga_setelah_diskon' as const,
+    biayaIklanPerPesanan: 4_000,
+    biayaKemasan: 3_000,
+    subsidiOngkir: 4_800,
+    biayaPembayaran: 2_000,
+    biayaLain: 0,
+  }
+
+  it('mengembalikan ringkasan sesuai contoh PRD', () => {
+    expect(expectOk(ringkasanBiayaReseller(contoh))).toEqual({
+      pendapatanBersih: 140_000,
+      dasarKomisi: 140_000,
+      biayaPlatform: 11_200,
+      totalBiayaVariabel: 105_000,
+      labaPerPesanan: 35_000,
+    })
+  })
+
+  it('mengikuti dasar komisi yang dipilih', () => {
+    const sebelumDiskon = expectOk(
+      ringkasanBiayaReseller({
+        ...contoh,
+        dasarKomisi: 'harga_sebelum_diskon',
+      }),
+    )
+    expect(sebelumDiskon.dasarKomisi).toBe(150_000)
+    expect(sebelumDiskon.biayaPlatform).toBe(12_000)
+    expect(sebelumDiskon.totalBiayaVariabel).toBe(105_800)
+    expect(sebelumDiskon.labaPerPesanan).toBe(34_200)
+
+    const pendapatan = expectOk(
+      ringkasanBiayaReseller({
+        ...contoh,
+        dasarKomisi: 'pendapatan_bersih',
+      }),
+    )
+    expect(pendapatan.dasarKomisi).toBe(140_000)
+    expect(pendapatan.biayaPlatform).toBe(11_200)
+  })
+
+  it('tidak mengurangi diskon dan refund dua kali', () => {
+    const hasil = expectOk(
+      ringkasanBiayaReseller({ ...contoh, diskon: 20_000, refund: 5_000 }),
+    )
+    expect(hasil.pendapatanBersih).toBe(125_000)
+    expect(hasil.totalBiayaVariabel).toBe(104_200)
+    expect(hasil.labaPerPesanan).toBe(20_800)
+  })
+
+  it('menolak diskon dan refund melebihi harga jual', () => {
+    expectErr(
+      ringkasanBiayaReseller({
+        ...contoh,
+        diskon: 200_000,
+      }),
+      'PENDAPATAN_NEGATIF',
+    )
+  })
+
+  it('menolak biaya negatif', () => {
+    expectErr(
+      ringkasanBiayaReseller({ ...contoh, biayaKemasan: -1 }),
+      'NOMINAL_NEGATIF',
+    )
+  })
+})
+
+describe('estimasiLabaVolume', () => {
+  it('mengalikan laba per pesanan dengan volume', () => {
+    expect(expectOk(estimasiLabaVolume(35_000, 50))).toBe(1_750_000)
+  })
+
+  it('menerima laba negatif dan volume pecahan positif', () => {
+    expect(expectOk(estimasiLabaVolume(-2_000, 2.5))).toBe(-5_000)
+  })
+
+  it('menolak volume nol', () => {
+    expectErr(estimasiLabaVolume(35_000, 0), 'KUANTITAS_TIDAK_POSITIF')
+  })
+
+  it('menolak laba non-finite', () => {
+    expectErr(
+      estimasiLabaVolume(Number.NaN, 10),
+      'BUKAN_ANGKA',
+    )
+  })
+})
+
+describe('statusLabaReseller', () => {
+  it('menandai laba positif sebagai untung', () => {
+    expect(expectOk(statusLabaReseller(1))).toBe('untung')
+  })
+
+  it('menandai laba nol sebagai impas', () => {
+    expect(expectOk(statusLabaReseller(0))).toBe('impas')
+  })
+
+  it('menandai laba negatif sebagai rugi', () => {
+    expect(expectOk(statusLabaReseller(-1))).toBe('rugi')
+  })
+
+  it('menolak nilai non-finite', () => {
+    expectErr(
+      statusLabaReseller(Number.POSITIVE_INFINITY),
+      'BUKAN_ANGKA',
     )
   })
 })

@@ -39,6 +39,16 @@ export interface ProdukPerbandinganHasil extends ProdukPerbandingan {
   labaTotal: number
 }
 
+export type StatusLabaReseller = 'untung' | 'impas' | 'rugi'
+
+export interface RingkasanBiayaReseller {
+  pendapatanBersih: number
+  dasarKomisi: number
+  biayaPlatform: number
+  totalBiayaVariabel: number
+  labaPerPesanan: number
+}
+
 export function pendapatanBersih(
   hargaJual: number,
   diskon: number,
@@ -64,6 +74,27 @@ export function pendapatanBersih(
   return ok(hargaJual - diskon - refund)
 }
 
+function hitungDasarKomisi(
+  input: BiayaPlatformInput,
+  pendapatan: number,
+): Result<number> {
+  switch (input.dasarKomisi) {
+    case 'harga_sebelum_diskon':
+      return ok(input.hargaJual)
+    case 'harga_setelah_diskon':
+      return ok(input.hargaJual - input.diskon)
+    case 'pendapatan_bersih':
+      return ok(pendapatan)
+    default:
+      return fail({
+        field: 'dasarKomisi',
+        code: 'DASAR_KOMPISI_TIDAK_DIKENAL',
+        message:
+          'Dasar komisi tidak dikenali; pilih harga sebelum diskon, harga setelah diskon, atau pendapatan bersih.',
+      })
+  }
+}
+
 export function biayaPlatform(input: BiayaPlatformInput): Result<number> {
   const tarifError = percentRange('tarifPlatform', input.tarifPlatform)
   if (tarifError) return fail(tarifError)
@@ -75,21 +106,10 @@ export function biayaPlatform(input: BiayaPlatformInput): Result<number> {
   )
   if (!pendapatan.ok) return pendapatan
 
-  switch (input.dasarKomisi) {
-    case 'harga_sebelum_diskon':
-      return ok(input.tarifPlatform * input.hargaJual)
-    case 'harga_setelah_diskon':
-      return ok(input.tarifPlatform * (input.hargaJual - input.diskon))
-    case 'pendapatan_bersih':
-      return ok(input.tarifPlatform * pendapatan.value)
-    default:
-      return fail({
-        field: 'dasarKomisi',
-        code: 'DASAR_KOMPISI_TIDAK_DIKENAL',
-        message:
-          'Dasar komisi tidak dikenali; pilih harga sebelum diskon, harga setelah diskon, atau pendapatan bersih.',
-      })
-  }
+  const dasar = hitungDasarKomisi(input, pendapatan.value)
+  if (!dasar.ok) return dasar
+
+  return ok(input.tarifPlatform * dasar.value)
 }
 
 export function biayaIklanPerPesanan(
@@ -150,6 +170,88 @@ export function labaPerPesanan(input: LabaPerPesananInput): Result<number> {
       input.subsidiOngkir -
       input.biayaLain,
   )
+}
+
+/**
+ * Ringkasan biaya per pesanan. Diskon dan refund sudah tercermin di
+ * pendapatan bersih, lalu seluruh biaya variabel dikurangkan satu kali.
+ * `dasarKomisi` ikut dikembalikan agar dasar tarif platform dapat ditampilkan.
+ */
+export function ringkasanBiayaReseller(
+  input: LabaPerPesananInput,
+): Result<RingkasanBiayaReseller> {
+  const pendapatan = pendapatanBersih(
+    input.hargaJual,
+    input.diskon,
+    input.refund,
+  )
+  if (!pendapatan.ok) return pendapatan
+
+  const platform = biayaPlatform({
+    hargaJual: input.hargaJual,
+    diskon: input.diskon,
+    refund: input.refund,
+    tarifPlatform: input.tarifPlatform,
+    dasarKomisi: input.dasarKomisi,
+  })
+  if (!platform.ok) return platform
+
+  const laba = labaPerPesanan(input)
+  if (!laba.ok) return laba
+
+  const dasar = hitungDasarKomisi(input, pendapatan.value)
+  if (!dasar.ok) return dasar
+
+  return ok({
+    pendapatanBersih: pendapatan.value,
+    dasarKomisi: dasar.value,
+    biayaPlatform: platform.value,
+    totalBiayaVariabel:
+      input.biayaBarang +
+      platform.value +
+      input.biayaPembayaran +
+      input.biayaIklanPerPesanan +
+      input.biayaKemasan +
+      input.subsidiOngkir +
+      input.biayaLain,
+    labaPerPesanan: laba.value,
+  })
+}
+
+export function estimasiLabaVolume(
+  labaPerPesanan: number,
+  volumePesanan: number,
+): Result<number> {
+  if (!isFiniteNumber(labaPerPesanan)) {
+    return fail({
+      field: 'labaPerPesanan',
+      code: 'BUKAN_ANGKA',
+      message:
+        'labaPerPesanan harus berupa angka yang valid; periksa kembali isian Anda.',
+    })
+  }
+
+  const volumeError = positiveQty('volumePesanan', volumePesanan)
+  if (volumeError) return fail(volumeError)
+
+  return ok(labaPerPesanan * volumePesanan)
+}
+
+export function statusLabaReseller(
+  labaPerPesanan: number,
+): Result<StatusLabaReseller> {
+  if (!isFiniteNumber(labaPerPesanan)) {
+    return fail({
+      field: 'labaPerPesanan',
+      code: 'BUKAN_ANGKA',
+      message:
+        'labaPerPesanan harus berupa angka yang valid; periksa kembali isian Anda.',
+    })
+  }
+
+  if (labaPerPesanan > 0) return ok('untung')
+  if (labaPerPesanan < 0) return ok('rugi')
+  return ok('impas')
 }
 
 /**

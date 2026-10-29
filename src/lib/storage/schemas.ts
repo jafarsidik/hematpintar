@@ -60,12 +60,24 @@ const householdItemSchema = z.object({
   harga: moneySchema,
 })
 
+const unitPriceCheckSchema = z.object({
+  nama: z
+    .string({ error: 'Nama kemasan harus berupa teks.' })
+    .trim()
+    .max(120, 'Nama kemasan maksimal 120 karakter.')
+    .optional(),
+  hargaKemasan: moneySchema,
+  isiKemasan: qtySchema,
+  satuan: satuanSchema,
+})
+
 export const householdPayloadSchema = z.object({
   budget: moneySchema,
   items: z.array(householdItemSchema),
   baselineItems: z.array(householdItemSchema),
   alternativeItems: z.array(householdItemSchema),
   notes: teksSchema,
+  unitPriceCheck: unitPriceCheckSchema.optional(),
 })
 export type HouseholdPayload = z.infer<typeof householdPayloadSchema>
 

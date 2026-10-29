@@ -7,7 +7,9 @@ import {
   hargaMinimum,
   hargaNormalPaket,
   labaPaket,
+  marginPaket,
   statusPaket,
+  totalBiayaRelevanPaket,
 } from './bundle'
 import { expectErr, expectOk } from './test-helpers'
 
@@ -107,6 +109,47 @@ describe('labaPaket', () => {
 
   it('menolak harga paket negatif', () => {
     expectErr(labaPaket(-1, 24_000), 'NOMINAL_NEGATIF')
+  })
+})
+
+describe('marginPaket', () => {
+  it('menghitung laba dibagi harga paket', () => {
+    expect(expectOk(marginPaket(2_000, 27_000))).toBeCloseTo(
+      2_000 / 27_000,
+      12,
+    )
+  })
+
+  it('boleh negatif saat paket rugi', () => {
+    expect(expectOk(marginPaket(-5_000, 20_000))).toBeCloseTo(-0.25, 12)
+  })
+
+  it('menolak harga paket nol sebagai pembagi', () => {
+    expectErr(marginPaket(2_000, 0), 'HARGA_PAKET_NOL')
+  })
+
+  it('menolak harga paket negatif', () => {
+    expectErr(marginPaket(2_000, -1), 'NOMINAL_NEGATIF')
+  })
+
+  it('menolak laba non-finite', () => {
+    expectErr(marginPaket(Number.NaN, 27_000), 'BUKAN_ANGKA')
+    expectErr(marginPaket(Number.POSITIVE_INFINITY, 27_000), 'BUKAN_ANGKA')
+  })
+})
+
+describe('totalBiayaRelevanPaket', () => {
+  it('menjumlahkan biaya paket dan biaya penjualan variabel', () => {
+    expect(expectOk(totalBiayaRelevanPaket(24_000, 1_000))).toBe(25_000)
+  })
+
+  it('menerima tanpa biaya penjualan variabel', () => {
+    expect(expectOk(totalBiayaRelevanPaket(24_000))).toBe(24_000)
+  })
+
+  it('menolak komponen negatif', () => {
+    expectErr(totalBiayaRelevanPaket(-1, 0), 'NOMINAL_NEGATIF')
+    expectErr(totalBiayaRelevanPaket(24_000, -1), 'NOMINAL_NEGATIF')
   })
 })
 

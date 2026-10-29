@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BATAS_MENDEKATI_ANGGARAN,
   hargaPerSatuanStandar,
+  hargaPerSatuanStandarDetail,
   penghematan,
   persenAnggaranTerpakai,
+  satuanStandar,
   sisaAnggaran,
+  statusAnggaran,
   totalBelanja,
 } from './household'
 import { expectErr, expectOk } from './test-helpers'
@@ -146,5 +150,156 @@ describe('penghematan', () => {
 
   it('menolak nilai alternatif negatif', () => {
     expectErr(penghematan(0, -1), 'NOMINAL_NEGATIF')
+  })
+})
+
+describe('satuanStandar', () => {
+  it('memetakan satuan massa ke kg', () => {
+    expect(satuanStandar('g')).toBe('kg')
+    expect(satuanStandar('kg')).toBe('kg')
+  })
+
+  it('memetakan satuan volume ke l', () => {
+    expect(satuanStandar('ml')).toBe('l')
+    expect(satuanStandar('l')).toBe('l')
+  })
+
+  it('mempertahankan satuan jumlah', () => {
+    expect(satuanStandar('pcs')).toBe('pcs')
+  })
+})
+
+describe('hargaPerSatuanStandarDetail', () => {
+  it('menghitung contoh PRD: Rp18.000 untuk 750 g menjadi Rp24.000/kg', () => {
+    const detail = expectOk(hargaPerSatuanStandarDetail(18_000, 750, 'g'))
+    expect(detail).toEqual({
+      harga: 24_000,
+      satuan: 'kg',
+      isiStandar: 0.75,
+    })
+  })
+
+  it('menerima isi kemasan yang sudah dalam kg', () => {
+    const detail = expectOk(hargaPerSatuanStandarDetail(18_000, 0.75, 'kg'))
+    expect(detail).toEqual({
+      harga: 24_000,
+      satuan: 'kg',
+      isiStandar: 0.75,
+    })
+  })
+
+  it('menghitung harga per liter dari mililiter', () => {
+    const detail = expectOk(hargaPerSatuanStandarDetail(18_000, 1_500, 'ml'))
+    expect(detail.harga).toBe(12_000)
+    expect(detail.satuan).toBe('l')
+    expect(detail.isiStandar).toBe(1.5)
+  })
+
+  it('menghitung harga per pcs', () => {
+    const detail = expectOk(hargaPerSatuanStandarDetail(10_000, 2, 'pcs'))
+    expect(detail).toEqual({
+      harga: 5_000,
+      satuan: 'pcs',
+      isiStandar: 2,
+    })
+  })
+
+  it('menolak isi kemasan nol', () => {
+    expectErr(
+      hargaPerSatuanStandarDetail(18_000, 0, 'kg'),
+      'KUANTITAS_TIDAK_POSITIF',
+    )
+  })
+
+  it('menolak harga kemasan negatif', () => {
+    expectErr(
+      hargaPerSatuanStandarDetail(-1, 1, 'kg'),
+      'NOMINAL_NEGATIF',
+    )
+  })
+})
+
+describe('statusAnggaran', () => {
+  it('dalam anggaran saat pemakaian di bawah 90%', () => {
+    expect(expectOk(statusAnggaran(200_000, 134_000))).toBe('dalam_anggaran')
+  })
+
+  it('mendekati batas saat pemakaian tepat 90%', () => {
+    expect(expectOk(statusAnggaran(100_000, 90_000))).toBe('mendekati_batas')
+  })
+
+  it('mendekati batas saat pemakaian 100% tetapi belum melebihi', () => {
+    expect(expectOk(statusAnggaran(100_000, 100_000))).toBe(
+      'mendekati_batas',
+    )
+  })
+
+  it('melebihi anggaran saat total lebih besar dari anggaran', () => {
+    expect(expectOk(statusAnggaran(100_000, 100_001))).toBe(
+      'melebihi_anggaran',
+    )
+  })
+
+  it('melebihi anggaran saat anggaran nol dan ada belanja', () => {
+    expect(expectOk(statusAnggaran(0, 1))).toBe('melebihi_anggaran')
+  })
+
+  it('dalam anggaran saat anggaran dan total sama-sama nol', () => {
+    expect(expectOk(statusAnggaran(0, 0))).toBe('dalam_anggaran')
+  })
+
+  it('memakai ambang 90%', () => {
+    expect(BATAS_MENDEKATI_ANGGARAN).toBe(0.9)
+  })
+
+  it('menolak anggaran negatif', () => {
+    expectErr(statusAnggaran(-1, 0), 'NOMINAL_NEGATIF')
+  })
+
+  it('menolak total negatif', () => {
+    expectErr(statusAnggaran(0, -1), 'NOMINAL_NEGATIF')
+  })
+
+  it('menolak Infinity', () => {
+    expectErr(
+      statusAnggaran(Number.POSITIVE_INFINITY, 0),
+      'BUKAN_ANGKA',
+    )
+  })
+})
+
+describe('contoh Hemat Rumah Tangga', () => {
+  it('menghasilkan angka acuan PRD 5.2', () => {
+    const budget = 200_000
+    const items = [
+      { jumlah: 5, hargaSatuan: 12_000 },
+      { jumlah: 2, hargaSatuan: 17_000 },
+      { jumlah: 1, hargaSatuan: 30_000 },
+      { jumlah: 2, hargaSatuan: 5_000 },
+    ]
+    const baselineItems = [
+      { jumlah: 5, hargaSatuan: 13_000 },
+      { jumlah: 2, hargaSatuan: 18_000 },
+      { jumlah: 1, hargaSatuan: 32_000 },
+      { jumlah: 2, hargaSatuan: 5_000 },
+    ]
+
+    const total = expectOk(totalBelanja(items))
+    const baseline = expectOk(totalBelanja(baselineItems))
+    const alternative = expectOk(totalBelanja(items))
+
+    expect(total).toBe(134_000)
+    expect(expectOk(sisaAnggaran(budget, total))).toBe(66_000)
+    expect(expectOk(persenAnggaranTerpakai(budget, total))).toBe(0.67)
+    expect(baseline).toBe(143_000)
+    expect(alternative).toBe(134_000)
+    expect(expectOk(penghematan(baseline, alternative))).toBe(9_000)
+    expect(expectOk(statusAnggaran(budget, total))).toBe('dalam_anggaran')
+
+    const unit = expectOk(
+      hargaPerSatuanStandarDetail(18_000, 0.75, 'kg'),
+    )
+    expect(unit.harga).toBe(24_000)
+    expect(unit.satuan).toBe('kg')
   })
 })
